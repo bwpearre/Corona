@@ -23,9 +23,6 @@ class CoronaBrowser(tk.Frame):
                 self.grid()
                 self.createWidgets()
 
-        def dateparser(self, dt):
-                return pd.datetime.strptime(dt, self.date_format)
-
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.doFile)
                 self.loadButton.grid()
@@ -40,11 +37,12 @@ class CoronaBrowser(tk.Frame):
                         
 
         def loadFilePandas(self, data_filename):
-                import pandas as pd
+                dateparser = lambda dates: [pd.datetime.strptime(d, self.date_format) for d in dates]
+
                 d = pd.read_csv(data_filename, header = None, skiprows = 2,
                                 names = ['index', 'date', 'volts', 'h', 's', 'e'],
                                 usecols = ['date', 'volts'],
-                                parse_dates=['date'], date_parser=self.dateparser)
+                                parse_dates=['date'], date_parser=dateparser)
                 register_matplotlib_converters()
                 d.head()
                 return d['date'].tolist(), d['volts'].tolist()
