@@ -3,9 +3,10 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog
 import matplotlib
-matplotlib.use("TkAgg")
+#matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from pandas.plotting import register_matplotlib_converters
+import time
 
 class CoronaBrowser(tk.Frame):
         
@@ -23,19 +24,24 @@ class CoronaBrowser(tk.Frame):
                 self.grid()
                 self.createWidgets()
 
+        # Set up the main window.
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.doFile)
                 self.loadButton.grid()
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
                 self.quitButton.grid()
 
+        # Ask for a filename, load it, plot it.
         def doFile(self):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
+                        #start = time.time() 
                         times, volts = self.loadFilePandas(data_filename)
+                        #print(time.time() - start) # how many seconds does it take to load the file?
                         self.plot_voltages_matplotlib(times, volts)
                         
 
+        # Load a file using Pandas. This is  easy, but a little slow.
         def loadFilePandas(self, data_filename):
                 dateparser = lambda dates: [pd.datetime.strptime(d, self.date_format) for d in dates]
 
@@ -48,32 +54,30 @@ class CoronaBrowser(tk.Frame):
                 return d['date'].tolist(), d['volts'].tolist()
 
 
-        def loadFile(self):
-                data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
+        # Faster loading. Note that Python grows lists sensibly, so
+        # repeated calls to append() aren't as inefficient as they
+        # look.
+        def loadFileBen(self, data_filename):
+                import csv
 
                 times = []
                 volts = []
-                
-                if data_filename:
-                        import csv
-                        with open(data_filename) as csv_file:
-                                csv_reader = csv.reader(csv_file)
-                                line_count = 0
-                                for row in csv_reader:
-                                        if line_count <= 1:
-                                                line_count += 1
-
-                                        else:
-                                                dt = datetime.strptime(row[1], self.date_format)
-                                                self.times.append(dt)
-                                                v = float(row[2])
-                                                self.volts.append(v)
-                                                line_count += 1
-
-                print(f'Read {self.times[0]} -- {self.times[-1]} ({line_count} samples).')
+                with open(data_filename) as csv_file:
+                        csv_reader = csv.reader(csv_file)
+                        line_count = 0
+                        for row in csv_reader:
+                                if line_count <= 1:
+                                        line_count += 1
+                                else:
+                                        dt = datetime.strptime(row[1], self.date_format)
+                                        times.append(dt)
+                                        v = float(row[2])
+                                        volts.append(v)
+                                        line_count += 1
+                register_matplotlib_converters()
                 return times, volts
 
-
+        # Plot voltage vs time using the Bokeh library.
         def plot_voltages_bokeh(self, times, volts):
                 from bokeh.plotting import figure, show
                 from bokeh.models.sources import ColumnDataSource
@@ -90,10 +94,10 @@ class CoronaBrowser(tk.Frame):
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
                                                              seconds='%Y-%m-%d %H:%M:%S')
 
-                #output_notebook()
                 show(p)
 
 
+        # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts):
                 plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.3))
                 plt.plot(times, volts)
