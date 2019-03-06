@@ -1,4 +1,3 @@
-#!/Users/bwp/anaconda3/bin/python
 import csv
 from datetime import datetime
 import tkinter as tk
@@ -12,8 +11,15 @@ class CoronaBrowser(tk.Frame):
         
         def __init__(self, master=None):
                 tk.Frame.__init__(self, master)
+
+                # matplotlib wants to size windows in inches. Find out the screen size in inches:
+                self.screendims_inches = [self.winfo_screenmmwidth(), self.winfo_screenmmheight()]
+                self.screendims_inches = [x / 25.4 for x in self.screendims_inches]
+
+                # Create root window:
                 self.grid()
                 self.createWidgets()
+                
 
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
@@ -46,7 +52,7 @@ class CoronaBrowser(tk.Frame):
                                                 line_count += 1
 
                 print(f'Read {self.times[0]} -- {self.times[-1]} ({line_count} samples).')
-                self.plot_voltages_mat()
+                self.plot_voltages_matplotlib()
 
 
         def plot_voltages_bokeh(self):
@@ -69,9 +75,11 @@ class CoronaBrowser(tk.Frame):
                 show(p)
 
 
-        def plot_voltages_mat(self):
-                plt.figure()
+        def plot_voltages_matplotlib(self):
+                plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.3))
                 plt.plot(self.times, self.volts)
+                plt.xlabel('time')
+                plt.ylabel('volts')
                 plt.show()
     
                 
