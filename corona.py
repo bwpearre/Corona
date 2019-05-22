@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from pandas.plotting import register_matplotlib_converters
 import time
 
+# 20311011 is good
+
 class CoronaBrowser(tk.Frame):
         
         def __init__(self, master=None):
@@ -28,6 +30,10 @@ class CoronaBrowser(tk.Frame):
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.doFile)
                 self.loadButton.grid()
+                self.quitButton = tk.Button(self, text="Replot with Bokeh", command=self.processFile)
+                self.quitButton.grid()
+                self.quitButton = tk.Button(self, text="Replot with MatPlotLib", command=self.processFileMPL)
+                self.quitButton.grid()
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
                 self.quitButton.grid()
 
@@ -36,9 +42,21 @@ class CoronaBrowser(tk.Frame):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
                         #start = time.time() 
-                        times, volts = self.loadFilePandas(data_filename)
-                        #print(time.time() - start) # how many seconds does it take to load the file?
-                        self.plot_voltages_matplotlib(times, volts)
+                        self.times, self.volts = self.loadFileBen(data_filename)
+                        self.filename = data_filename
+                        self.processFile()
+
+        def processFile(self):
+                #print(time.time() - start) # how many seconds does it take to load the file?
+                self.events = self.find_events(self.times, self.volts)
+                #self.plot_voltages_bokeh(self.times, self.volts, self.events)
+                self.plot_voltages_bokeh(self.times, self.volts, self.events)
+                
+        def processFileMPL(self):
+                #print(time.time() - start) # how many seconds does it take to load the file?
+                #self.events = self.find_events(self.times, self.volts)
+                #self.plot_voltages_bokeh(self.times, self.volts, self.events)
+                self.plot_voltages_matplotlib(self.times, self.volts)
                         
 
         # Load a file using Pandas. This is  easy, but a little slow.
@@ -57,28 +75,50 @@ class CoronaBrowser(tk.Frame):
         # Faster loading. Note that Python grows lists sensibly, so
         # repeated calls to append() aren't as inefficient as they
         # look.
-        def loadFileBen(self, data_filename):
-                import csv
+        def loadFileBen(self, fname):
+            import csv
 
-                times = []
-                volts = []
-                with open(data_filename) as csv_file:
-                        csv_reader = csv.reader(csv_file)
-                        line_count = 0
-                        for row in csv_reader:
-                                if line_count <= 1:
-                                        line_count += 1
-                                else:
-                                        dt = datetime.strptime(row[1], self.date_format)
-                                        times.append(dt)
-                                        v = float(row[2])
-                                        volts.append(v)
-                                        line_count += 1
-                register_matplotlib_converters()
-                return times, volts
+            times = []
+            volts = []
+
+            with open(fname) as csv_file:
+                csv_reader = csv.reader(csv_file)
+                line_count = 0
+                try:
+                    for row in csv_reader:
+                        if line_count < 2:
+                            line_count += 1
+                        else:
+                            times.append(datetime.strptime(row[1], self.date_format))
+                            volts.append(float(row[2]))
+                            line_count += 1
+                except ValueError:
+                    print(f'Warning reading line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count-1} lines.')
+                except IndexError:
+                    print(f'Warning reading line {line_count}: incomplete line. Using first {line_count-1} lines.')
+            register_matplotlib_converters()
+            lengths = min(len(times), len(volts))
+            times=times[0:lengths-1]
+            volts=volts[0:lengths-1]
+            return times, volts
+
+
+        def find_events(self, times, volts):
+                eventThreshold = {'volts': 0.02, 'count': 5}
+
+                events = []
+                thresholdCounter = 0
+                for i in range(len(times)):
+                        if volts[i] > eventThreshold['volts']:
+                                thresholdCounter += 1
+                        else:
+                                thresholdCounter = 0;
+                        if thresholdCounter == eventThreshold['count']:
+                                events.append(i)
+                return events
 
         # Plot voltage vs time using the Bokeh library.
-        def plot_voltages_bokeh(self, times, volts):
+        def plot_voltages_bokeh(self, times, volts, events):
                 from bokeh.plotting import figure, show
                 from bokeh.models.sources import ColumnDataSource
                 from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, WheelPanTool, ResetTool, ZoomOutTool
@@ -87,12 +127,14 @@ class CoronaBrowser(tk.Frame):
                            tools=[BoxZoomTool(),
                                   WheelPanTool(dimension='width'),
                                   ZoomOutTool(factor=0.5),
-                                  ResetTool()])
+                                  ResetTool()],
+                           title=self.filename)
                 p.sizing_mode = 'scale_width'
-                p.line(x = times, y = volts)
+                p.line(x = times, y = volts, legend='trace')
                 p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
                                                              seconds='%Y-%m-%d %H:%M:%S')
+                p.circle([times[i] for i in events], [volts[i] for i in events], size=8, legend='event?', color='red', alpha=0.6)
 
                 show(p)
 
@@ -103,6 +145,7 @@ class CoronaBrowser(tk.Frame):
                 plt.plot(times, volts)
                 plt.xlabel('time')
                 plt.ylabel('volts')
+                plt.title(self.filename)
                 plt.show()
     
                 
