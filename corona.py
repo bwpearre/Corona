@@ -1,7 +1,7 @@
 import pandas as pd
 from datetime import datetime
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, END
 import matplotlib
 #matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -9,21 +9,6 @@ from pandas.plotting import register_matplotlib_converters
 import time
 
 # 20311011 is good
-
-class Waitbar(tk.Frame):
-    def __init__(self, master, *args, **kwargs):
-        #tk.Frame.__init__(self, master, *args, **kwargs)
-        self.progressbar = ttk.Progressbar(self, length=100, maximum=100, value=0)
-        self.progressbar.pack()
-
-    # Update the waitbar. v is from 0-1.
-    def setval(self, v):
-        self.v = int(v*100)
-        self.progress()
-
-    def progress(self):
-        self.progressbar['value'] = self.v
-        self.after(10, self.progress)
 
 
 
@@ -46,17 +31,30 @@ class CoronaBrowser(tk.Frame):
         # Set up the main window.
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.doFile)
-                self.loadButton.grid(row=0, column=0, columnspan=2)
+                self.loadButton.grid(row=0, column=0, columnspan=5)
+                tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=1, column=0)
+                tk.Label(self, text='Volts:').grid(row=1, column=1)
+                self.detectionVoltageBox = tk.Entry(self, width=5)
+                self.detectionVoltageBox.grid(row=1, column=2);
+                tk.Label(self, text='Count:').grid(row=1, column=3)
+                self.detectionCountBox = tk.Entry(self, width=5)
+                self.detectionCountBox.grid(row=1, column=4);
+                
                 self.rbButton = tk.Button(self, text="Replot with Bokeh", command=self.processFile)
-                self.rbButton.grid(row=2, column=0)
+                self.rbButton.grid(row=2, column=0, columnspan=2)
                 self.rmplButton = tk.Button(self, text="Replot with MatPlotLib", command=self.processFileMPL)
-                self.rmplButton.grid(row=2, column=1)
+                self.rmplButton.grid(row=2, column=2, columnspan=2)
                 self.waitbar_label = tk.Label(self, text='Ready.')
-                self.waitbar_label.grid(row=3, column=0, sticky='E')
-                self.waitbar = ttk.Progressbar(self, orient="horizontal", value=0, mode='determinate')
-                self.waitbar.grid(row=3, column=1, sticky='W')
+                self.waitbar_label.grid(row=3, column=0, columnspan=5)
+                self.waitbar = ttk.Progressbar(self, orient="horizontal", length=300, value=0, mode='determinate')
+                self.waitbar.grid(row=4, column=0, columnspan=5)
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
-                self.quitButton.grid(columnspan=2)
+                self.quitButton.grid(row=5, column=5)
+
+                self.eventThreshold = {'volts': 0.02, 'count': 5}
+                self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
+                self.detectionCountBox.insert(0, self.eventThreshold['count'])
+                
 
         # Set the waitbar up for a new task
         def waitbar_start(self, text, maxval):
@@ -71,6 +69,7 @@ class CoronaBrowser(tk.Frame):
         def waitbar_indeterminate_start(self, text):
                 self.waitbar['mode'] = 'indeterminate'
                 self.waitbar_label['text'] = text
+                self.update()
                 self.waitbar.start()
 
         # Set the waitbar up for a new task
@@ -104,15 +103,12 @@ class CoronaBrowser(tk.Frame):
                         self.processFile()
 
         def processFile(self):
-                #print(time.time() - start) # how many seconds does it take to load the file?
                 self.events = self.find_events(self.times, self.volts)
                 #self.plot_voltages_bokeh(self.times, self.volts, self.events)
                 self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
                 
         def processFileMPL(self):
-                #print(time.time() - start) # how many seconds does it take to load the file?
-                #self.events = self.find_events(self.times, self.volts)
-                #self.plot_voltages_bokeh(self.times, self.volts, self.events)
+                self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts)
                         
 
@@ -142,6 +138,7 @@ class CoronaBrowser(tk.Frame):
 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
+            self.waitbar_indeterminate_start('Checking file size...')
             num_lines = sum(1 for line in open(fname))
             #print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
@@ -157,13 +154,14 @@ class CoronaBrowser(tk.Frame):
                         else:
                             times.append(datetime.strptime(row[1], self.date_format))
                             volts.append(float(row[2]))
-                            if len(row) > 2:
+                            if len(row) > 3:
                                     temps.append(float(row[3]))
                             line_count += 1
                 except ValueError:
-                    print(f'Warning reading line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count-1} lines.')
+                    print(f'Warning reading line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count-1} lines. Complete row was {row}.')
                 except IndexError:
-                    print(f'Warning reading line {line_count}: incomplete line. Using first {line_count-1} lines.')
+                    print(f'Warning reading line {line_count}: {row} looked incomplete. Using first {line_count-1} lines.')
+                          
             self.waitbar_done()
             register_matplotlib_converters()
             lengths = min(len(times), len(volts))
@@ -175,7 +173,23 @@ class CoronaBrowser(tk.Frame):
 
 
         def find_events(self, times, volts):
-                eventThreshold = {'volts': 0.02, 'count': 5}
+                try:
+                        self.eventThreshold['volts'] = float(self.detectionVoltageBox.get())
+                except:
+                        print(f'Could not convert voltage "{self.detectionVoltageBox.get()}" to number. Resetting to default.')
+                        self.eventThreshold['volts'] = 0.02
+                
+                        
+                try:
+                        self.eventThreshold['count'] = int(float(self.detectionCountBox.get()))
+                except:
+                        print(f'Could not convert count "{self.detectionCountBox.get()}" to number. Resetting to default.')
+                        self.eventThreshold['count'] = 5;
+                self.detectionVoltageBox.delete(0, END)
+                self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
+                self.detectionCountBox.delete(0, END)
+                self.detectionCountBox.insert(0, self.eventThreshold['count'])
+
 
                 self.waitbar_start('Looking for events...', len(times))
 
@@ -184,11 +198,11 @@ class CoronaBrowser(tk.Frame):
                 for i in range(len(times)):
                         self.waitbar_update(i)
 
-                        if volts[i] > eventThreshold['volts']:
+                        if volts[i] > self.eventThreshold['volts']:
                                 thresholdCounter += 1
                         else:
                                 thresholdCounter = 0;
-                        if thresholdCounter == eventThreshold['count']:
+                        if thresholdCounter == self.eventThreshold['count']:
                                 events.append(i)
                 self.waitbar_done()
                 return events
@@ -197,19 +211,22 @@ class CoronaBrowser(tk.Frame):
         def plot_voltages_bokeh(self, times, volts, temps, events):
                 from bokeh.plotting import figure, show
                 from bokeh.models.sources import ColumnDataSource
-                from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, WheelPanTool, ResetTool, ZoomOutTool
+                from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, PanTool, WheelPanTool, ResetTool, ZoomInTool, ZoomOutTool
 
                 self.waitbar_indeterminate_start('Plotting...')
                 self.waitbar.update()
                 p = figure(plot_width=3, plot_height=1, x_axis_type='datetime',
                            tools=[BoxZoomTool(),
+                                  BoxZoomTool(dimensions='width'),
                                   WheelPanTool(dimension='width'),
                                   ZoomOutTool(factor=0.5),
+                                  ZoomOutTool(factor=0.5, dimensions='width'),
                                   ResetTool()],
                            title=self.filename)
                 p.sizing_mode = 'scale_width'
                 p.line(x = times, y = volts, legend='V', color='black')
-                p.line(x = times, y = temps, legend='Temp', color='blue')
+                if len(temps):
+                        p.line(x = times, y = temps, legend='Temp', color='blue')
                 p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
                                                              seconds='%Y-%m-%d %H:%M:%S')
