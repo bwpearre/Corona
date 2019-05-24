@@ -6,6 +6,14 @@ import matplotlib
 #matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from pandas.plotting import register_matplotlib_converters
+from bokeh.plotting import figure, show
+from bokeh.models.sources import ColumnDataSource
+from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, PanTool, WheelPanTool, ResetTool, ZoomInTool, ZoomOutTool
+from bokeh.models import LinearAxis, Range1d
+import numpy as np
+from numpy import mat # matrix
+from numpy.linalg import inv
+
 import time
 
 # 20311011 is good
@@ -30,7 +38,7 @@ class CoronaBrowser(tk.Frame):
 
         # Set up the main window.
         def createWidgets(self):
-                self.loadButton = tk.Button(self, text="Load", command=self.doFile)
+                self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
                 self.loadButton.grid(row=0, column=0, columnspan=5)
                 tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=1, column=0)
                 tk.Label(self, text='Volts:').grid(row=1, column=1)
@@ -44,12 +52,13 @@ class CoronaBrowser(tk.Frame):
                 self.rbButton.grid(row=2, column=0, columnspan=2)
                 self.rmplButton = tk.Button(self, text="Replot with MatPlotLib", command=self.processFileMPL)
                 self.rmplButton.grid(row=2, column=2, columnspan=2)
+                self.regressButton = tk.Button(self, text='Regress', command=self.regress)
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=3, column=0, columnspan=5)
                 self.waitbar = ttk.Progressbar(self, orient="horizontal", length=300, value=0, mode='determinate')
                 self.waitbar.grid(row=4, column=0, columnspan=5)
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
-                self.quitButton.grid(row=5, column=5)
+                self.quitButton.grid(row=6, column=4)
 
                 self.eventThreshold = {'volts': 0.02, 'count': 5}
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
@@ -95,16 +104,16 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar_label['text'] = 'Ready.'
 
         # Ask for a filename, load it, plot it.
-        def doFile(self):
+        def loadFile(self):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
+                        self.regressButton.grid_forget()
                         self.times, self.volts, self.temps = self.loadFileBen(data_filename)                        
                         self.filename = data_filename
                         self.processFile()
 
         def processFile(self):
                 self.events = self.find_events(self.times, self.volts)
-                #self.plot_voltages_bokeh(self.times, self.volts, self.events)
                 self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
                 
         def processFileMPL(self):
@@ -123,6 +132,35 @@ class CoronaBrowser(tk.Frame):
                 register_matplotlib_converters()
                 d.head()
                 return d['date'].tolist(), d['volts'].tolist()
+
+        def regress(self):
+                length = len(self.temps)
+                if length == 0:
+                        return 0
+                
+                x = mat(self.temps).reshape((length,1))
+                y = mat(self.volts).reshape((length,1))
+
+                x = np.hstack((x, np.ones((length, 1))))
+                
+                fit = (x.T*x).I*x.T*y
+                fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
+                print(f'Least-squares linear regression is {fit_desc}')
+
+                sampleX=mat([[min(self.temps)-0.3, 1],
+                               [max(self.temps)+0.3, 1]])
+                sampleY=sampleX*fit
+                
+                plt.figure(figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.6))
+                plt.scatter(self.temps, self.volts, label='data', s=1, c='black')
+                plt.plot(sampleX[:,0], sampleY, label=fit_desc)
+                plt.xlabel('Temperature (C)')
+                plt.ylabel('Potential (V)')
+                plt.title(self.filename)
+                plt.legend()
+                plt.show()
+
+                                                  
 
 
         # Faster loading. Note that Python grows lists sensibly, so
@@ -169,6 +207,8 @@ class CoronaBrowser(tk.Frame):
             volts=volts[0:lengths-1]
             if len(temps) > 1:
                     temps = temps[0:lengths-1]
+                    self.regressButton.grid(row=2, column=4)
+
             return times, volts, temps
 
 
@@ -209,12 +249,7 @@ class CoronaBrowser(tk.Frame):
 
         # Plot voltage vs time using the Bokeh library.
         def plot_voltages_bokeh(self, times, volts, temps, events):
-                from bokeh.plotting import figure, show
-                from bokeh.models.sources import ColumnDataSource
-                from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, PanTool, WheelPanTool, ResetTool, ZoomInTool, ZoomOutTool
-
                 self.waitbar_indeterminate_start('Plotting...')
-                self.waitbar.update()
                 p = figure(plot_width=3, plot_height=1, x_axis_type='datetime',
                            tools=[BoxZoomTool(),
                                   BoxZoomTool(dimensions='width'),
@@ -224,13 +259,17 @@ class CoronaBrowser(tk.Frame):
                                   ResetTool()],
                            title=self.filename)
                 p.sizing_mode = 'scale_width'
-                p.line(x = times, y = volts, legend='V', color='black')
+                p.yaxis.axis_label = 'Potential (mV)'
+                p.line(x = times, y = volts, legend='Potential (mV)', color='black')
+                p.y_range = Range1d(start=min(volts), end=max(volts))
                 if len(temps):
-                        p.line(x = times, y = temps, legend='Temp', color='blue')
+                        p.extra_y_ranges = {"foo": Range1d(start=min(temps), end=max(temps))}
+                        p.add_layout(LinearAxis(y_range_name="foo", axis_label='Temperature (C)'), 'right')
+                        p.line(x = times, y = temps, legend='Temperature', color='blue', y_range_name="foo")
                 p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
                                                              seconds='%Y-%m-%d %H:%M:%S')
-                p.circle([times[i] for i in events], [volts[i] for i in events], size=8, legend='event?', color='red', alpha=0.6)
+                p.circle([times[i] for i in events], [volts[i] for i in events], size=8, legend='event?', color='red', alpha=0.7)
 
                 show(p)
                 self.waitbar_indeterminate_done()
