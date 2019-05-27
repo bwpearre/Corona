@@ -60,9 +60,9 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=1, column=4);
                 
-                self.rbButton = tk.Button(self, text="Replot with Bokeh", command=self.processFile)
+                self.rbButton = tk.Button(self, text="Rescan (Bokeh)", command=self.processFile)
                 self.rbButton.grid(row=2, column=0, columnspan=2)
-                self.rmplButton = tk.Button(self, text="Replot with MatPlotLib", command=self.processFileMPL)
+                self.rmplButton = tk.Button(self, text="Rescan (MatPlotLib)", command=self.processFileMPL)
                 self.rmplButton.grid(row=2, column=2, columnspan=2)
                 self.regressButton = tk.Button(self, text='Regress', command=self.regress)
                 self.waitbar_label = tk.Label(self, text='Ready.')
@@ -301,24 +301,63 @@ class CoronaBrowser(tk.Frame):
 
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
-                plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.3))
-                plt.plot(times, volts, label='Potential')
-                
-                for i in range(len(events.start_indices)):
-                        if i == 0:
-                                plt.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                         volts[events.start_indices[i]:events.end_indices[i]],
-                                         c='red', linewidth=3, label='event?')
-                        else:
-                                plt.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                         volts[events.start_indices[i]:events.end_indices[i]],
-                                         c='red', linewidth=3)
-                        #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
-                        #            s=events.sizes, c='red', label='Event?')
-                plt.xlabel('Time')
-                plt.ylabel('Potential (V)')
+
+                if len(temps):
+                        fig, ax1 = plt.subplots(figsize=(self.screendims_inches[0]*0.9,
+                                                         self.screendims_inches[1]*0.4))
+                        plot_v_to = ax1
+                        
+
+                        color = 'blue'
+                        ax1.set_xlabel('Time')
+                        ax1.set_ylabel('Potential (V)', color=color)
+                        ax1.plot(times, volts, color=color, label='Potential')
+                        ax1.tick_params(axis='y', labelcolor=color)
+
+                        ax2 = ax1.twinx()
+
+                        color = 'tab:green'
+                        ax2.set_ylabel('Temperature (C)', color=color)
+                        ax2.plot(times, temps, color=color, label='Temperature')
+                        ax2.tick_params(axis='y', labelcolor=color)
+                        
+                        for i in range(len(events.start_indices)):
+                                if i == 0:
+                                        ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                                 c='red', linewidth=4, label='event?')
+                                else:
+                                        ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                                 c='red', linewidth=4)
+                                #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
+                                #            s=events.sizes, c='red', label='Event?')
+                        #if len(events.start_indices):
+                        #        plt.legend([l1, l2, l3],["Potential", "Temperature", "Event?"])
+                        #else:
+                        #        plt.legend([l1, l2], ["Potential", "Temperature"])
+                                
+                        fig.tight_layout()  # otherwise the right y-label is slightly clipped
+
+                else:
+                        plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
+
+                        plt.plot(times, volts, label='Potential', c='blue')
+                        for i in range(len(events.start_indices)):
+                                if i == 0:
+                                        plt.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                                 c='red', linewidth=4, label='event?')
+                                else:
+                                        plt.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                                 c='red', linewidth=4)
+                                #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
+                                #            s=events.sizes, c='red', label='Event?')
+                        plt.xlabel('Time')
+                        plt.ylabel('Potential (V)')
+                        plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
-                plt.legend()
                 plt.title(self.filename)
                 plt.show()
     
