@@ -110,7 +110,7 @@ class CoronaBrowser(tk.Frame):
                         self.regressButton.grid_forget()
                         self.times, self.volts, self.temps = self.loadFileBen(data_filename)                        
                         self.filename = data_filename
-                        self.processFile()
+                        self.processFileMPL()
 
         def processFile(self):
                 self.events = self.find_events(self.times, self.volts)
@@ -118,7 +118,7 @@ class CoronaBrowser(tk.Frame):
                 
         def processFileMPL(self):
                 self.events = self.find_events(self.times, self.volts)
-                self.plot_voltages_matplotlib(self.times, self.volts)
+                self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
 
         # Load a file using Pandas. This is  easy, but a little slow.
@@ -260,7 +260,7 @@ class CoronaBrowser(tk.Frame):
                            title=self.filename)
                 p.sizing_mode = 'scale_width'
                 p.yaxis.axis_label = 'Potential (mV)'
-                p.line(x = times, y = volts, legend='Potential (mV)', color='black')
+                p.line(x = times, y = volts, legend='Potential', color='black')
                 p.y_range = Range1d(start=min(volts), end=max(volts))
                 if len(temps):
                         p.extra_y_ranges = {"foo": Range1d(start=min(temps), end=max(temps))}
@@ -276,11 +276,14 @@ class CoronaBrowser(tk.Frame):
 
 
         # Plot voltage vs time using Matplotlib
-        def plot_voltages_matplotlib(self, times, volts):
+        def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
                 plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.3))
-                plt.plot(times, volts)
-                plt.xlabel('time')
-                plt.ylabel('volts')
+                plt.plot(times, volts, label='Potential')
+                if len(events):
+                        plt.scatter([times[i] for i in events], [volts[i] for i in events], c='red', label='Event?')
+                plt.xlabel('Time')
+                plt.ylabel('Potential (V)')
+                plt.legend()
                 plt.title(self.filename)
                 plt.show()
     
