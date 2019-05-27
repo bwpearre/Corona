@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk, END
 import matplotlib
@@ -13,12 +13,24 @@ from bokeh.models import LinearAxis, Range1d
 import numpy as np
 from numpy import mat # matrix
 from numpy.linalg import inv
+import math
 
 import time
 
 # 20311011 is good
 
 
+
+class Events:
+        def __init__(self):
+                self.start_indices = []
+                self.end_indices = []
+                self.sizes = []
+
+        def add(self, start, end, size):
+                self.start_indices.append(start)
+                self.end_indices.append(end)
+                self.sizes.append(size)
 
 class CoronaBrowser(tk.Frame):
         
@@ -44,7 +56,7 @@ class CoronaBrowser(tk.Frame):
                 tk.Label(self, text='Volts:').grid(row=1, column=1)
                 self.detectionVoltageBox = tk.Entry(self, width=5)
                 self.detectionVoltageBox.grid(row=1, column=2);
-                tk.Label(self, text='Count:').grid(row=1, column=3)
+                tk.Label(self, text='Seconds:').grid(row=1, column=3)
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=1, column=4);
                 
@@ -60,7 +72,7 @@ class CoronaBrowser(tk.Frame):
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
                 self.quitButton.grid(row=6, column=4)
 
-                self.eventThreshold = {'volts': 0.02, 'count': 5}
+                self.eventThreshold = {'volts': 0.02, 'count': 40}
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
                 self.detectionCountBox.insert(0, self.eventThreshold['count'])
                 
@@ -190,7 +202,7 @@ class CoronaBrowser(tk.Frame):
                         if line_count < 2:
                             line_count += 1
                         else:
-                            times.append(datetime.strptime(row[1], self.date_format))
+                            times.append(datetime.datetime.strptime(row[1], self.date_format))
                             volts.append(float(row[2]))
                             if len(row) > 3:
                                     temps.append(float(row[3]))
@@ -224,7 +236,7 @@ class CoronaBrowser(tk.Frame):
                         self.eventThreshold['count'] = int(float(self.detectionCountBox.get()))
                 except:
                         print(f'Could not convert count "{self.detectionCountBox.get()}" to number. Resetting to default.')
-                        self.eventThreshold['count'] = 5;
+                        self.eventThreshold['count'] = 40;
                 self.detectionVoltageBox.delete(0, END)
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
                 self.detectionCountBox.delete(0, END)
@@ -233,17 +245,28 @@ class CoronaBrowser(tk.Frame):
 
                 self.waitbar_start('Looking for events...', len(times))
 
-                events = []
+                events = Events()
                 thresholdCounter = 0
+                aboveThresholdStart = 0
                 for i in range(len(times)):
                         self.waitbar_update(i)
 
                         if volts[i] > self.eventThreshold['volts']:
+                                if thresholdCounter == 0:
+                                        aboveThresholdStart = i
                                 thresholdCounter += 1
                         else:
+                                if thresholdCounter > 0: # Was above threshold at time index i-1
+                                        # If just counting samples:
+                                        #if thresholdCounter >= self.eventThreshold['count']:
+                                        #        events.append(i)
+                                        # If looking for time-above-threshold:
+                                        aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
+                                        if aboveThresholdTime.seconds >= self.eventThreshold['count']:
+                                                print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
+                                                events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
                                 thresholdCounter = 0;
-                        if thresholdCounter == self.eventThreshold['count']:
-                                events.append(i)
+
                 self.waitbar_done()
                 return events
 
@@ -269,7 +292,8 @@ class CoronaBrowser(tk.Frame):
                 p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
                                                              seconds='%Y-%m-%d %H:%M:%S')
-                p.circle([times[i] for i in events], [volts[i] for i in events], size=8, legend='event?', color='red', alpha=0.7)
+                p.circle([times[i] for i in events.end_indices], [volts[i] for i in events.end_indices],
+                         size=[math.sqrt(i) for i in events.sizes], legend='event?', color='red', alpha=0.7)
 
                 show(p)
                 self.waitbar_indeterminate_done()
@@ -279,10 +303,21 @@ class CoronaBrowser(tk.Frame):
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
                 plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.3))
                 plt.plot(times, volts, label='Potential')
-                if len(events):
-                        plt.scatter([times[i] for i in events], [volts[i] for i in events], c='red', label='Event?')
+                
+                for i in range(len(events.start_indices)):
+                        if i == 0:
+                                plt.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                         volts[events.start_indices[i]:events.end_indices[i]],
+                                         c='red', linewidth=3, label='event?')
+                        else:
+                                plt.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                         volts[events.start_indices[i]:events.end_indices[i]],
+                                         c='red', linewidth=3)
+                        #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
+                        #            s=events.sizes, c='red', label='Event?')
                 plt.xlabel('Time')
                 plt.ylabel('Potential (V)')
+                plt.get_current_fig_manager().toolbar.zoom()
                 plt.legend()
                 plt.title(self.filename)
                 plt.show()
