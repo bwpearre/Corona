@@ -157,13 +157,13 @@ class CoronaBrowser(tk.Frame):
 
                 x = np.hstack((x, np.ones((length, 1))))
                 
-                fit = (x.T*x).I*x.T*y
-                fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
+                self.fit = (x.T*x).I*x.T*y
+                fit_desc = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
                 print(f'Least-squares linear regression is {fit_desc}')
 
                 sampleX=mat([[min(self.temps)-0.3, 1],
                                [max(self.temps)+0.3, 1]])
-                sampleY=sampleX*fit
+                sampleY=sampleX * self.fit
                 
                 plt.figure(figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.6))
                 plt.scatter(self.temps, self.volts, label='data', s=0.01, c='blue')
@@ -174,6 +174,20 @@ class CoronaBrowser(tk.Frame):
                 plt.legend()
                 plt.show()
                 self.waitbar_indeterminate_done();
+
+                volts_corrected = y - x * self.fit + np.mean(self.volts)
+                plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
+
+                plt.plot(self.times, self.volts, label='Raw', c='blue', linewidth=1)
+                plt.plot(self.times, volts_corrected, label='Corrected', c='green', linewidth=1)
+                plt.xlabel('Time')
+                plt.ylabel('Potential (V)')
+                plt.legend()
+                plt.get_current_fig_manager().toolbar.zoom()
+                plt.title(self.filename)
+                plt.show()
+
+                
 
                                                   
 
