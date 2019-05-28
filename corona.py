@@ -53,18 +53,18 @@ class CoronaBrowser(tk.Frame):
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
                 self.loadButton.grid(row=0, column=0, columnspan=5)
                 tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=1, column=0)
-                tk.Label(self, text='Volts:').grid(row=1, column=1)
+                tk.Label(self, text='Volts:').grid(row=1, column=1, sticky='E')
                 self.detectionVoltageBox = tk.Entry(self, width=5)
-                self.detectionVoltageBox.grid(row=1, column=2);
-                tk.Label(self, text='Seconds:').grid(row=1, column=3)
+                self.detectionVoltageBox.grid(row=1, column=2, sticky='W');
+                tk.Label(self, text='Seconds:').grid(row=1, column=3, sticky='E')
                 self.detectionCountBox = tk.Entry(self, width=5)
-                self.detectionCountBox.grid(row=1, column=4);
+                self.detectionCountBox.grid(row=1, column=4, sticky='W');
                 
-                self.rbButton = tk.Button(self, text="Rescan (Bokeh)", command=self.processFile)
-                self.rbButton.grid(row=2, column=0, columnspan=2)
-                self.rmplButton = tk.Button(self, text="Rescan (MatPlotLib)", command=self.processFileMPL)
-                self.rmplButton.grid(row=2, column=2, columnspan=2)
-                self.regressButton = tk.Button(self, text='Regress', command=self.regress)
+                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.processFile)
+                self.rbButton.grid(row=2, column=0)
+                self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.processFileMPL)
+                self.rmplButton.grid(row=2, column=1)
+                self.regressButton = tk.Button(self, text='Potential vs Temp', command=self.regress)
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=3, column=0, columnspan=5)
                 self.waitbar = ttk.Progressbar(self, orient="horizontal", length=300, value=0, mode='determinate')
@@ -149,7 +149,9 @@ class CoronaBrowser(tk.Frame):
                 length = len(self.temps)
                 if length == 0:
                         return 0
-                
+
+                self.waitbar_indeterminate_start('Plotting regression...')
+
                 x = mat(self.temps).reshape((length,1))
                 y = mat(self.volts).reshape((length,1))
 
@@ -164,13 +166,14 @@ class CoronaBrowser(tk.Frame):
                 sampleY=sampleX*fit
                 
                 plt.figure(figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.6))
-                plt.scatter(self.temps, self.volts, label='data', s=1, c='black')
-                plt.plot(sampleX[:,0], sampleY, label=fit_desc)
+                plt.scatter(self.temps, self.volts, label='data', s=0.01, c='blue')
+                plt.plot(sampleX[:,0], sampleY, c='green', label=fit_desc)
                 plt.xlabel('Temperature (C)')
                 plt.ylabel('Potential (V)')
                 plt.title(self.filename)
                 plt.legend()
                 plt.show()
+                self.waitbar_indeterminate_done();
 
                                                   
 
@@ -311,25 +314,25 @@ class CoronaBrowser(tk.Frame):
                         color = 'blue'
                         ax1.set_xlabel('Time')
                         ax1.set_ylabel('Potential (V)', color=color)
-                        ax1.plot(times, volts, color=color, label='Potential')
+                        ax1.plot(times, volts, color=color, label='Potential', linewidth=1)
                         ax1.tick_params(axis='y', labelcolor=color)
 
                         ax2 = ax1.twinx()
 
                         color = 'tab:green'
                         ax2.set_ylabel('Temperature (C)', color=color)
-                        ax2.plot(times, temps, color=color, label='Temperature')
+                        ax2.plot(times, temps, color=color, label='Temperature', linewidth=1)
                         ax2.tick_params(axis='y', labelcolor=color)
                         
                         for i in range(len(events.start_indices)):
                                 if i == 0:
                                         ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=4, label='event?')
+                                                 c='red', linewidth=3, label='event?')
                                 else:
                                         ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=4)
+                                                 c='red', linewidth=3)
                                 #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
                                 #            s=events.sizes, c='red', label='Event?')
                         #if len(events.start_indices):
@@ -342,16 +345,16 @@ class CoronaBrowser(tk.Frame):
                 else:
                         plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
 
-                        plt.plot(times, volts, label='Potential', c='blue')
+                        plt.plot(times, volts, label='Potential', c='blue', linewidth=1)
                         for i in range(len(events.start_indices)):
                                 if i == 0:
                                         plt.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=4, label='event?')
+                                                 c='red', linewidth=3, label='event?')
                                 else:
                                         plt.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=4)
+                                                 c='red', linewidth=3)
                                 #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
                                 #            s=events.sizes, c='red', label='Event?')
                         plt.xlabel('Time')
