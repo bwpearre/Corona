@@ -14,12 +14,10 @@ import numpy as np
 from numpy import mat # matrix
 from numpy.linalg import inv
 import math
-
 import time
+import pdb
 
 # 20311011 is good
-
-
 
 class Events:
         def __init__(self):
@@ -60,9 +58,9 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=1, column=4, sticky='W');
                 
-                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.processFile)
+                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.plotEvents)
                 self.rbButton.grid(row=2, column=0)
-                self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.processFileMPL)
+                self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.plotEventsMPL)
                 self.rmplButton.grid(row=2, column=1)
                 self.regressButton = tk.Button(self, text='Potential vs Temp', command=self.regress)
                 self.waitbar_label = tk.Label(self, text='Ready.')
@@ -121,18 +119,18 @@ class CoronaBrowser(tk.Frame):
                 if data_filename:
                         self.regressButton.grid_forget()
                         self.times, self.volts, self.temps = self.loadFileBen(data_filename)                        
-                        self.filename = data_filename
-                        self.processFileMPL()
+                        self.filename = data_filename 
+                        if self.temperature_present:
+                                self.regress()
+                                self.volts = self.volts_corrected
+                       
+                        self.plotEventsMPL()
 
-        def processFile(self):
+        def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
                 
-        def processFileMPL(self):
-                if self.temperature_present:
-                        self.regress()
-                        self.volts = self.volts_corrected
-                        
+        def plotEventsMPL(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
@@ -163,26 +161,27 @@ class CoronaBrowser(tk.Frame):
                 
                 self.fit = (x.T*x).I*x.T*y
                 fit_desc = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
+                fit_desc_short = f'V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
                 print(f'Least-squares linear regression is {fit_desc}')
 
                 sampleX=mat([[min(self.temps)-0.3, 1],
                                [max(self.temps)+0.3, 1]])
                 sampleY=sampleX * self.fit
-                
-                plt.figure(figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.6))
+
+                plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts, label='data', s=0.01, c='blue')
-                plt.plot(sampleX[:,0], sampleY, c='green', label=fit_desc)
+                plt.plot(sampleX[:,0], sampleY, c='green', label=fit_desc_short)
                 plt.xlabel('Temperature (C)')
                 plt.ylabel('Potential (V)')
-                plt.title(self.filename)
+                plt.title('Linear regression')
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
-                plt.show()
-                self.waitbar_indeterminate_done();
 
-                self.volts_corrected = y - x * self.fit
-                plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
 
+                self.volts_corrected = (y - x * self.fit).reshape((1,length)).tolist()[0]
+
+                plt.subplot(1, 3, (2, 3))
                 plt.plot(self.times, self.volts, label='Raw', c='blue', linewidth=1)
                 plt.plot(self.times, self.volts_corrected + np.mean(self.volts), label='Corrected + mean', c='green', linewidth=1)
                 plt.xlabel('Time')
@@ -192,9 +191,7 @@ class CoronaBrowser(tk.Frame):
                 plt.title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
-
-                
-
+                self.waitbar_indeterminate_done();
                                                   
 
 
@@ -290,25 +287,29 @@ class CoronaBrowser(tk.Frame):
                 events = Events()
                 thresholdCounter = 0
                 aboveThresholdStart = 0
-                for i in range(len(times)):
-                        self.waitbar_update(i)
+                try:
+                        for i in range(len(times)):
+                                self.waitbar_update(i)
 
-                        if volts[i] > self.eventThreshold['volts']:
-                                if thresholdCounter == 0:
-                                        aboveThresholdStart = i
-                                thresholdCounter += 1
-                        else:
-                                if thresholdCounter > 0: # Was above threshold at time index i-1
-                                        # If just counting samples:
-                                        #if thresholdCounter >= self.eventThreshold['count']:
-                                        #        events.append(i)
-                                        # If looking for time-above-threshold:
-                                        aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
-                                        if aboveThresholdTime.seconds >= self.eventThreshold['count']:
-                                                print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
-                                                events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
-                                thresholdCounter = 0;
-
+                                if volts[i] > self.eventThreshold['volts']:
+                                        if thresholdCounter == 0:
+                                                aboveThresholdStart = i
+                                        thresholdCounter += 1
+                                else:
+                                        if thresholdCounter > 0: # Was above threshold at time index i-1
+                                                # If just counting samples:
+                                                #if thresholdCounter >= self.eventThreshold['count']:
+                                                #        events.append(i)
+                                                # If looking for time-above-threshold:
+                                                aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
+                                                if aboveThresholdTime.seconds >= self.eventThreshold['count']:
+                                                        print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
+                                                        events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
+                                        thresholdCounter = 0;
+                except Exception as e:
+                        print(e)
+                        pdb.set_trace()
+                        
                 self.waitbar_done()
                 return events
 
@@ -344,7 +345,7 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
 
-                if len(temps):
+                if self.temperature_present:
                         fig, ax1 = plt.subplots(figsize=(self.screendims_inches[0]*0.9,
                                                          self.screendims_inches[1]*0.4))
                         plot_v_to = ax1
