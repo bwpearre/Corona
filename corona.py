@@ -129,6 +129,10 @@ class CoronaBrowser(tk.Frame):
                 self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
                 
         def processFileMPL(self):
+                if self.temperature_present:
+                        self.regress()
+                        self.volts = self.volts_corrected
+                        
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
@@ -146,12 +150,12 @@ class CoronaBrowser(tk.Frame):
                 return d['date'].tolist(), d['volts'].tolist()
 
         def regress(self):
-                length = len(self.temps)
-                if length == 0:
-                        return 0
+                if not self.temperature_present:
+                        return
 
                 self.waitbar_indeterminate_start('Plotting regression...')
 
+                length = len(self.temps)
                 x = mat(self.temps).reshape((length,1))
                 y = mat(self.volts).reshape((length,1))
 
@@ -172,19 +176,21 @@ class CoronaBrowser(tk.Frame):
                 plt.ylabel('Potential (V)')
                 plt.title(self.filename)
                 plt.legend()
+                plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
                 self.waitbar_indeterminate_done();
 
-                volts_corrected = y - x * self.fit + np.mean(self.volts)
+                self.volts_corrected = y - x * self.fit
                 plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
 
                 plt.plot(self.times, self.volts, label='Raw', c='blue', linewidth=1)
-                plt.plot(self.times, volts_corrected, label='Corrected', c='green', linewidth=1)
+                plt.plot(self.times, self.volts_corrected + np.mean(self.volts), label='Corrected + mean', c='green', linewidth=1)
                 plt.xlabel('Time')
                 plt.ylabel('Potential (V)')
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.title(self.filename)
+                plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
 
                 
@@ -209,6 +215,7 @@ class CoronaBrowser(tk.Frame):
             num_lines = sum(1 for line in open(fname))
             #print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
+            self.temperature_present = False
             
             with open(fname) as csv_file:
                 csv_reader = csv.reader(csv_file)
@@ -216,18 +223,36 @@ class CoronaBrowser(tk.Frame):
                 try:
                     for row in csv_reader:
                         self.waitbar_update(line_count)
+                        if line_count == 1:
+                                if len(row) >= 4:
+                                        if row[3][0:4].lower() == "temp":
+                                                print(f'Detected temperature: {row[3]}')
+                                                self.temperature_present = True
                         if line_count < 2:
                             line_count += 1
                         else:
                             times.append(datetime.datetime.strptime(row[1], self.date_format))
                             volts.append(float(row[2]))
-                            if len(row) > 3:
+                            if self.temperature_present:
                                     temps.append(float(row[3]))
                             line_count += 1
                 except ValueError:
-                    print(f'Warning reading line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count-1} lines. Complete row was {row}.')
+                        try:
+                                datetime.datetime.strptime(row[1], self.date_format)
+                        except ValueError:
+                                print(f'Warning reading line {line_count+1}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count} lines. Complete row was {row}.')
+                        try:
+                                float(row[2])
+                        except ValueError:
+                                print(f'Warning reading line {line_count+1}: could not parse string "{row[2]}" as a float. Using first {line_count} lines.')
+                        if self.temperature_present:
+                                try:
+                                        float(row[3])
+                                except ValueError:
+                                        print(f'Warning reading line {line_count+1}: could not parse string "{row[3]}" as a float. Using first {line_count} lines.')
+                                
                 except IndexError:
-                    print(f'Warning reading line {line_count}: {row} looked incomplete. Using first {line_count-1} lines.')
+                    print(f'Warning reading line {line_count+1}: {row} looked incomplete. Using first {line_count} lines.')
                           
             self.waitbar_done()
             register_matplotlib_converters()
@@ -374,8 +399,8 @@ class CoronaBrowser(tk.Frame):
                         plt.xlabel('Time')
                         plt.ylabel('Potential (V)')
                         plt.legend()
-                plt.get_current_fig_manager().toolbar.zoom()
                 plt.title(self.filename)
+                plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
                 
