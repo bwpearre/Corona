@@ -179,14 +179,14 @@ class CoronaBrowser(tk.Frame):
 
                 
                 fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
-                fit_desc_old_short = f'APPLIED: V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
+                fit_desc_old_short = f'As applied: V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
                 print(f'Current least-squares linear regression is {fit_desc_old}')
 
                 # Compute the new least-squares fit:
                 fit = (x.T*x).I*x.T*y
                 
                 fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
-                fit_desc_short = f'THIS SET: V ~ {fit[0,0]:.2g} * T + {fit[1,0]:.2g}'
+                fit_desc_short = f'From this set: V ~ {fit[0,0]:.2g} * T + {fit[1,0]:.2g}'
                 print(f'    Regression using this dataset would be {fit_desc}')
 
                 sampleX = mat([[min(self.temps)-0.3, 1],
@@ -198,8 +198,8 @@ class CoronaBrowser(tk.Frame):
                 plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_raw, s=0.01, c='black')
-                plt.plot(sampleX[:,0], sampleY_old, c='green', label=fit_desc_old_short)
                 plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
+                plt.plot(sampleX[:,0], sampleY_old, c='blue', label=fit_desc_old_short)
                 plt.xlabel('Temperature (C)')
                 plt.ylabel('Potential (V)')
                 plt.title('Linear regressions')
@@ -209,11 +209,18 @@ class CoronaBrowser(tk.Frame):
                 volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
 
                 plt.subplot(1, 3, (2, 3))
-                plt.plot(self.times, self.volts_raw, label='Raw', c='black', linewidth=1)
-                plt.plot(self.times, self.volts, label='Applied correction', c='green', linewidth=1)
-                plt.plot(self.times, volts, label='This-dataset correction', c='red', linewidth=1)
-                plt.xlabel('Time')
-                plt.legend()
+                ax1 = plt.gca()
+                ax1.plot(self.times, self.volts_raw, label='Raw', c='black', linewidth=1)
+                ax1.plot(self.times, volts, label='Potential corrected, if using this dataset', c='red', linewidth=1)
+                ax1.plot(self.times, self.volts, label='Corrected, as applied', c='blue', linewidth=1)
+                ax1.set_xlabel('Time')
+
+                ax2 = ax1.twinx()
+                ax2.set_ylabel('Temperature (C)', color='green')
+                ax2.plot(self.times, self.temps, color='green', label='Temperature', linewidth=1)
+                ax2.tick_params(axis='y', labelcolor='green')
+                
+                ax1.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
