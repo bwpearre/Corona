@@ -46,6 +46,10 @@ class CoronaBrowser(tk.Frame):
                 self.grid()
                 self.createWidgets()
 
+                # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
+                self.fit = mat([[-0.020992708021557917],
+                               [5.272377975649473]])
+
         # Set up the main window.
         def createWidgets(self):
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
@@ -62,7 +66,7 @@ class CoronaBrowser(tk.Frame):
                 self.rbButton.grid(row=2, column=0)
                 self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.plotEventsMPL)
                 self.rmplButton.grid(row=2, column=1)
-                self.regressButton = tk.Button(self, text='Potential vs Temp', command=self.regress)
+                self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=3, column=0, columnspan=5)
                 self.waitbar = ttk.Progressbar(self, orient="horizontal", length=300, value=0, mode='determinate')
@@ -118,11 +122,13 @@ class CoronaBrowser(tk.Frame):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
                         self.regressButton.grid_forget()
-                        self.times, self.volts, self.temps = self.loadFileBen(data_filename)                        
+                        self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
                         self.filename = data_filename 
                         if self.temperature_present:
-                                self.regress()
-                                self.volts = self.volts_corrected
+                                self.volts = self.temperature_correction_apply()
+                                self.temperature_show_old_and_new_corrections()
+                        else:
+                                self.volts = self.volts_raw
                        
                         self.plotEventsMPL()
 
@@ -135,7 +141,7 @@ class CoronaBrowser(tk.Frame):
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
 
-        # Load a file using Pandas. This is  easy, but a little slow.
+        # Load a file using Pandas. This is  easy, but a little slow. Also obsolete! Don't use it!
         def loadFilePandas(self, data_filename):
                 dateparser = lambda dates: [pd.datetime.strptime(d, self.date_format) for d in dates]
 
@@ -147,52 +153,72 @@ class CoronaBrowser(tk.Frame):
                 d.head()
                 return d['date'].tolist(), d['volts'].tolist()
 
-        def regress(self):
+                
+        # Correct the voltage using self.fit for temperature
+        def temperature_correction_apply(self):
                 if not self.temperature_present:
                         return
 
-                self.waitbar_indeterminate_start('Plotting regression...')
-
                 length = len(self.temps)
                 x = mat(self.temps).reshape((length,1))
-                y = mat(self.volts).reshape((length,1))
-
                 x = np.hstack((x, np.ones((length, 1))))
+                y = mat(self.volts_raw).reshape((length,1))
+                volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
+                return volts
+
+        # Show default and new regressions from voltage-vs-temperature
+        def temperature_show_old_and_new_corrections(self):
+                if not self.temperature_present:
+                        return
+
+                self.waitbar_indeterminate_start('Computing regression...')
+                length = len(self.temps)
+                x = mat(self.temps).reshape((length,1))
+                x = np.hstack((x, np.ones((length, 1))))
+                y = mat(self.volts_raw).reshape((length,1))
+
                 
-                self.fit = (x.T*x).I*x.T*y
-                fit_desc = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
-                fit_desc_short = f'V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
-                print(f'Least-squares linear regression is {fit_desc}')
+                fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
+                fit_desc_old_short = f'APPLIED: V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
+                print(f'Current least-squares linear regression is {fit_desc_old}')
 
-                sampleX=mat([[min(self.temps)-0.3, 1],
+                # Compute the new least-squares fit:
+                fit = (x.T*x).I*x.T*y
+                
+                fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
+                fit_desc_short = f'THIS SET: V ~ {fit[0,0]:.2g} * T + {fit[1,0]:.2g}'
+                print(f'    Regression using this dataset would be {fit_desc}')
+
+                sampleX = mat([[min(self.temps)-0.3, 1],
                                [max(self.temps)+0.3, 1]])
-                sampleY=sampleX * self.fit
-
+                sampleY = sampleX * fit
+                sampleY_old = sampleX * self.fit
+                
+                self.waitbar_indeterminate_start('Plotting regressions...')
                 plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
                 plt.subplot(1, 3, 1)
-                plt.scatter(self.temps, self.volts, label='data', s=0.01, c='blue')
-                plt.plot(sampleX[:,0], sampleY, c='green', label=fit_desc_short)
+                plt.scatter(self.temps, self.volts_raw, s=0.01, c='black')
+                plt.plot(sampleX[:,0], sampleY_old, c='green', label=fit_desc_old_short)
+                plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
                 plt.xlabel('Temperature (C)')
                 plt.ylabel('Potential (V)')
-                plt.title('Linear regression')
+                plt.title('Linear regressions')
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
 
-
-                self.volts_corrected = (y - x * self.fit).reshape((1,length)).tolist()[0]
+                volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
 
                 plt.subplot(1, 3, (2, 3))
-                plt.plot(self.times, self.volts, label='Raw', c='blue', linewidth=1)
-                plt.plot(self.times, self.volts_corrected + np.mean(self.volts), label='Corrected + mean', c='green', linewidth=1)
+                plt.plot(self.times, self.volts_raw, label='Raw', c='black', linewidth=1)
+                plt.plot(self.times, self.volts, label='Applied correction', c='green', linewidth=1)
+                plt.plot(self.times, volts, label='This-dataset correction', c='red', linewidth=1)
                 plt.xlabel('Time')
-                plt.ylabel('Potential (V)')
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
                 self.waitbar_indeterminate_done();
-                                                  
 
 
         # Faster loading. Note that Python grows lists sensibly, so
