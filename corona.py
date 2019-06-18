@@ -160,9 +160,9 @@ class CoronaBrowser(tk.Frame):
                         return
 
                 length = len(self.temps)
-                x = mat(self.temps).reshape((length,1))
+                x = np.mat(self.temps).reshape((length,1))
                 x = np.hstack((x, np.ones((length, 1))))
-                y = mat(self.volts_raw).reshape((length,1))
+                y = np.mat(self.volts_raw).reshape((length,1))
                 volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
                 return volts
 
@@ -179,14 +179,14 @@ class CoronaBrowser(tk.Frame):
 
                 
                 fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
-                fit_desc_old_short = f'As applied: V ~ {self.fit[0,0]:.2g} * T + {self.fit[1,0]:.2g}'
+                fit_desc_old_short = f'As applied: V ~ {self.fit[0,0]:.3g} * T + {self.fit[1,0]:.3g}'
                 print(f'Current least-squares linear regression is {fit_desc_old}')
 
                 # Compute the new least-squares fit:
                 fit = (x.T*x).I*x.T*y
                 
                 fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
-                fit_desc_short = f'From this set: V ~ {fit[0,0]:.2g} * T + {fit[1,0]:.2g}'
+                fit_desc_short = f'From this set: V ~ {fit[0,0]:.3g} * T + {fit[1,0]:.3g}'
                 print(f'    Regression using this dataset would be {fit_desc}')
 
                 sampleX = mat([[min(self.temps)-0.3, 1],
@@ -200,7 +200,7 @@ class CoronaBrowser(tk.Frame):
                 plt.scatter(self.temps, self.volts_raw, s=0.01, c='black')
                 plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
                 plt.plot(sampleX[:,0], sampleY_old, c='blue', label=fit_desc_old_short)
-                plt.xlabel('Temperature (C)')
+                plt.xlabel('Temperature (°C)')
                 plt.ylabel('Potential (V)')
                 plt.title('Linear regressions')
                 plt.legend()
@@ -216,7 +216,7 @@ class CoronaBrowser(tk.Frame):
                 ax1.set_xlabel('Time')
 
                 ax2 = ax1.twinx()
-                ax2.set_ylabel('Temperature (C)', color='green')
+                ax2.set_ylabel('Temperature (°C)', color='green')
                 ax2.plot(self.times, self.temps, color='green', label='Temperature', linewidth=1)
                 ax2.tick_params(axis='y', labelcolor='green')
                 
@@ -246,52 +246,47 @@ class CoronaBrowser(tk.Frame):
             #print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
             self.temperature_present = False
-            
+            temperature_in_freedom_units = False
+
             with open(fname) as csv_file:
+                print(f'Loading {fname}...')
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
-                try:
-                    for row in csv_reader:
+                for row in csv_reader:
                         self.waitbar_update(line_count)
-                        if line_count == 1:
-                                if len(row) >= 4:
-                                        if row[3][0:4].lower() == "temp":
-                                                print(f'Detected temperature: {row[3]}')
-                                                self.temperature_present = True
-                        if line_count < 2:
-                            line_count += 1
-                        else:
-                            times.append(datetime.datetime.strptime(row[1], self.date_format))
-                            volts.append(float(row[2]))
-                            if self.temperature_present:
-                                    temps.append(float(row[3]))
-                            line_count += 1
-                except ValueError:
-                        try:
-                                datetime.datetime.strptime(row[1], self.date_format)
-                        except ValueError:
-                                print(f'Warning reading line {line_count+1}: could not parse date string "{row[1]}" with expected format "{self.date_format}". Using first {line_count} lines. Complete row was {row}.')
-                        try:
-                                float(row[2])
-                        except ValueError:
-                                print(f'Warning reading line {line_count+1}: could not parse string "{row[2]}" as a float. Using first {line_count} lines.')
-                        if self.temperature_present:
-                                try:
-                                        float(row[3])
-                                except ValueError:
-                                        print(f'Warning reading line {line_count+1}: could not parse string "{row[3]}" as a float. Using first {line_count} lines.')
-                                
-                except IndexError:
-                    print(f'Warning reading line {line_count+1}: {row} looked incomplete. Using first {line_count} lines.')
+                        line_count += 1
+                        if line_count == 2:
+                                if len(row) >= 4 and row[3][0:4].lower() == "temp":
+                                        print(f'Detected temperature: {row[3]}')
+                                        self.temperature_present = True
+                                        if "°F" in row[3]:
+                                               temperature_in_freedom_units = True 
+                        if line_count > 2:
+                            if row[1] and row[2] and ((not self.temperature_present) or row[3]):
+                                    try:
+                                            times.append(datetime.datetime.strptime(row[1], self.date_format))
+                                    except ValueError:
+                                            print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
+                                            continue;
+                                    volts.append(float(row[2]))
+                                    if self.temperature_present:
+                                            temps.append(float(row[3]))
+                            else:
+                                    print(f'Line {line_count} "{row}" contains missing values. Ignoring the row.')
+
                           
             self.waitbar_done()
             register_matplotlib_converters()
-            lengths = min(len(times), len(volts))
-            times=times[0:lengths-1]
-            volts=volts[0:lengths-1]
-            if len(temps) > 1:
-                    temps = temps[0:lengths-1]
+            length = min(len(times), len(volts))
+            if self.temperature_present:
+                    length = min(length, len(temps))
+                    temps = np.array(temps[0:length]).reshape((length, 1))
+                    if temperature_in_freedom_units:
+                            temps =(temps - 32) * 5/9
+                            temperature_in_freedom_units = False # Unnecessary, but just in case...
                     self.regressButton.grid(row=2, column=4)
+            times = times[0:length]
+            volts = np.array(volts[0:length]).reshape((length, 1))
 
             return times, volts, temps
 
@@ -320,28 +315,25 @@ class CoronaBrowser(tk.Frame):
                 events = Events()
                 thresholdCounter = 0
                 aboveThresholdStart = 0
-                try:
-                        for i in range(len(times)):
-                                self.waitbar_update(i)
 
-                                if volts[i] > self.eventThreshold['volts']:
-                                        if thresholdCounter == 0:
-                                                aboveThresholdStart = i
-                                        thresholdCounter += 1
-                                else:
-                                        if thresholdCounter > 0: # Was above threshold at time index i-1
-                                                # If just counting samples:
-                                                #if thresholdCounter >= self.eventThreshold['count']:
-                                                #        events.append(i)
-                                                # If looking for time-above-threshold:
-                                                aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
-                                                if aboveThresholdTime.seconds >= self.eventThreshold['count']:
-                                                        print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
-                                                        events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
-                                        thresholdCounter = 0;
-                except Exception as e:
-                        print(e)
-                        pdb.set_trace()
+                for i in range(len(times)):
+                        self.waitbar_update(i)
+
+                        if volts[i] > self.eventThreshold['volts']:
+                                if thresholdCounter == 0:
+                                        aboveThresholdStart = i
+                                thresholdCounter += 1
+                        else:
+                                if thresholdCounter > 0: # Was above threshold at time index i-1
+                                        # If just counting samples:
+                                        #if thresholdCounter >= self.eventThreshold['count']:
+                                        #        events.append(i)
+                                        # If looking for time-above-threshold:
+                                        aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
+                                        if aboveThresholdTime.seconds >= self.eventThreshold['count']:
+                                                print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
+                                                events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
+                                thresholdCounter = 0;
                         
                 self.waitbar_done()
                 return events
@@ -361,9 +353,9 @@ class CoronaBrowser(tk.Frame):
                 p.yaxis.axis_label = 'Potential (mV)'
                 p.line(x = times, y = volts, legend='Potential', color='black')
                 p.y_range = Range1d(start=min(volts), end=max(volts))
-                if len(temps):
+                if self.temperature_present:
                         p.extra_y_ranges = {"foo": Range1d(start=min(temps), end=max(temps))}
-                        p.add_layout(LinearAxis(y_range_name="foo", axis_label='Temperature (C)'), 'right')
+                        p.add_layout(LinearAxis(y_range_name="foo", axis_label='Temperature (°C)'), 'right')
                         p.line(x = times, y = temps, legend='Temperature', color='blue', y_range_name="foo")
                 p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
                                                              minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
@@ -393,7 +385,7 @@ class CoronaBrowser(tk.Frame):
                         ax2 = ax1.twinx()
 
                         color = 'tab:green'
-                        ax2.set_ylabel('Temperature (C)', color=color)
+                        ax2.set_ylabel('Temperature (°C)', color=color)
                         ax2.plot(times, temps, color=color, label='Temperature', linewidth=1)
                         ax2.tick_params(axis='y', labelcolor=color)
                         
