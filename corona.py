@@ -179,14 +179,14 @@ class CoronaBrowser(tk.Frame):
 
                 
                 fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
-                fit_desc_old_short = f'As applied: V ~ {self.fit[0,0]:.3g} * T + {self.fit[1,0]:.3g}'
+                fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
                 print(f'Current least-squares linear regression is {fit_desc_old}')
 
                 # Compute the new least-squares fit:
                 fit = (x.T*x).I*x.T*y
                 
                 fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
-                fit_desc_short = f'From this set: V ~ {fit[0,0]:.3g} * T + {fit[1,0]:.3g}'
+                fit_desc_short = r'From this set: $V^* \approx ' + f'{fit[0,0]:.3g} \cdot T + {fit[1,0]:.3g}$'
                 print(f'    Regression using this dataset would be {fit_desc}')
 
                 sampleX = mat([[min(self.temps)-0.3, 1],
@@ -257,7 +257,6 @@ class CoronaBrowser(tk.Frame):
                         line_count += 1
                         if line_count == 2:
                                 if len(row) >= 4 and row[3][0:4].lower() == "temp":
-                                        print(f'Detected temperature: {row[3]}')
                                         self.temperature_present = True
                                         if "°F" in row[3]:
                                                temperature_in_freedom_units = True 
