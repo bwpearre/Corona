@@ -293,34 +293,34 @@ class CoronaBrowser(tk.Frame):
                                 # This is the line with all the header info. Figure out what we have...
                                 for column in range(1, len(row)):
                                         if row[column][0:4].lower() == "date":
-                                                print(f'Date found in column {column}.')
+                                                print(f'      Date found in column {column}.')
                                                 date_column = column
                                         if row[column][0:4].lower() == "temp":
                                                 # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
                                                 self.temperature_present = column
                                                 if "°F" in row[column]:
                                                        temperature_in_freedom_units = True
-                                                       print(f'Temperature (°F) found in column {column}.')
+                                                       print(f'      Temperature (°F) found in column {column}.')
                                                 else:
-                                                       print(f'Temperature (°C) found in column {column}.')
+                                                       print(f'      Temperature (°C) found in column {column}.')
                                         if row[column][0:4].lower() == 'volt':
                                                 voltage_column = column
-                                                print(f'Voltage found in column {column}.')
+                                                print(f'      Voltage found in column {column}.')
                                         if row[column][0:6].lower() == 'scaled':
-                                                print(f'Scaled Series found in column {column}.')
+                                                print(f'      Scaled Series found in column {column}.')
                                                 scaled_column = column
 
                                 # If there's no "voltage" column but there is a "scaled" column, I guess we just use that instead... and guess that the voltage_scaling_factor should probably be 2                  
                                 if scaled_column >= 0:
                                         if voltage_column == -1:
-                                                print('Could not find "Volt" but did find "Scaled Series". Guessing that the latter is scaled voltage, and setting my internal scaling factor to 1.')
+                                                print('  Could not find "Volt" but did find "Scaled Series". Interpreting it as scaled voltage, and setting my internal scaling factor to 1. Please verify.')
                                                 voltage_column = scaled_column
                                                 self.setVoltageScalingFactor(1)
                                         else:
-                                                print('Found both "Volt" and "Scaled Series". Using "Volt", but setting my internal scaling factor to 2. Please verify.')
+                                                print('  Found both "Volt" and "Scaled Series". Using "Volt", but setting my internal scaling factor to 2. Please verify.')
                                                 self.setVoltageScalingFactor(2)
                                 else:
-                                        print('Found Voltage, but not Scaled Series. Guessing that my internal scaling factor should be 1. Please verify.')
+                                        print('  Found Voltage, but not Scaled Series. Guessing that my internal scaling factor should be 1. Please verify.')
                                         self.setVoltageScalingFactor(1)
                                         
 
