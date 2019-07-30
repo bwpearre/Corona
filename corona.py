@@ -52,27 +52,42 @@ class CoronaBrowser(tk.Frame):
 
         # Set up the main window.
         def createWidgets(self):
+                row = 0
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
-                self.loadButton.grid(row=0, column=0, columnspan=5)
-                tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=1, column=0)
-                tk.Label(self, text='Volts:').grid(row=1, column=1, sticky='E')
+                self.loadButton.grid(row=row, column=0, columnspan=5)
+                row += 1
+                tk.Label(self, text='Voltage scaling factor:').grid(row=row, column=0)
+                self.voltageScalingFactor = 1
+                self.voltageScalingFactorBox = tk.Entry(self, width=8)
+                self.voltageScalingFactorBox.grid(row=row, column=1, sticky='W')
+                self.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+                self.voltageScalingButton = tk.Button(self, text="Apply", command=self.applyCorrections)
+                self.voltageScalingButton.grid(row=row, column=2)
+                row += 1
+                tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=row, column=0)
+                tk.Label(self, text='Volts:').grid(row=row, column=1, sticky='E')
                 self.detectionVoltageBox = tk.Entry(self, width=5)
-                self.detectionVoltageBox.grid(row=1, column=2, sticky='W');
-                tk.Label(self, text='Seconds:').grid(row=1, column=3, sticky='E')
+                self.detectionVoltageBox.grid(row=row, column=2, sticky='W');
+                tk.Label(self, text='Seconds:').grid(row=row, column=3, sticky='E')
                 self.detectionCountBox = tk.Entry(self, width=5)
-                self.detectionCountBox.grid(row=1, column=4, sticky='W');
-                
-                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.plotEvents)
-                self.rbButton.grid(row=2, column=0)
+                self.detectionCountBox.grid(row=row, column=4, sticky='W');
+                row += 1
+                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.plotEventsBokeh)
+                self.rbButton.grid(row=row, column=0)
                 self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.plotEventsMPL)
-                self.rmplButton.grid(row=2, column=1)
+                self.rmplButton.grid(row=row, column=1)
                 self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
+                row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
-                self.waitbar_label.grid(row=3, column=0, columnspan=5)
+                self.waitbar_label.grid(row=row, column=0, columnspan=5)
+                row += 1
                 self.waitbar = ttk.Progressbar(self, orient="horizontal", length=300, value=0, mode='determinate')
-                self.waitbar.grid(row=4, column=0, columnspan=5)
+                self.waitbar.grid(row=row, column=0, columnspan=5)
+                row += 1
+                self.debugButton = tk.Button(self, text="Debug", command=self.debug)
+                self.debugButton.grid(row=row, column=3)
                 self.quitButton = tk.Button(self, text="Quit", command=self.quit)
-                self.quitButton.grid(row=6, column=4)
+                self.quitButton.grid(row=row, column=4)
 
                 self.eventThreshold = {'volts': 0.02, 'count': 40}
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
@@ -117,6 +132,9 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar['value'] = 0
                 self.waitbar_label['text'] = 'Ready.'
 
+        def debug(self):
+                pdb.set_trace()
+
         # Ask for a filename, load it, plot it.
         def loadFile(self):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
@@ -124,15 +142,34 @@ class CoronaBrowser(tk.Frame):
                         self.regressButton.grid_forget()
                         self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
                         self.filename = data_filename 
-                        if self.temperature_present:
-                                self.volts = self.temperature_correction_apply()
-                                self.temperature_show_old_and_new_corrections()
-                        else:
-                                self.volts = self.volts_raw
-                       
-                        self.plotEventsMPL()
+                        self.applyCorrections()
+
+                        
+        def getVoltageScalingFactor(self):
+                try:
+                        self.voltageScalingFactor = float(self.voltageScalingFactorBox.get())
+                except:
+                        print(f'Could not convert voltage scaling factor "{self.voltageScalingFactorBox.get()}" to number. Resetting to 1.')
+                        self.voltageScalingFactor = 1.0
+                self.voltageScalingFactorBox.delete(0, END)
+                self.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+
+
+        def applyCorrections(self):
+                # Voltage scaling
+                self.getVoltageScalingFactor()
+                self.volts_scaled = self.volts_raw * self.voltageScalingFactor
+
+                # Correct for sensor temperature
+                self.volts = self.applyTemperatureCorrection()
+                
+                self.plotEvents()
+
 
         def plotEvents(self):
+                self.plotEventsMPL()
+        
+        def plotEventsBokeh(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
                 
@@ -141,29 +178,16 @@ class CoronaBrowser(tk.Frame):
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
 
-        # Load a file using Pandas. This is  easy, but a little slow. Also obsolete! Don't use it!
-        def loadFilePandas(self, data_filename):
-                dateparser = lambda dates: [pd.datetime.strptime(d, self.date_format) for d in dates]
-
-                d = pd.read_csv(data_filename, header = None, skiprows = 2,
-                                names = ['index', 'date', 'volts', 'h', 's', 'e'],
-                                usecols = ['date', 'volts'],
-                                parse_dates=['date'], date_parser=dateparser)
-                register_matplotlib_converters()
-                d.head()
-                return d['date'].tolist(), d['volts'].tolist()
-
-                
         # Correct the voltage using self.fit for temperature
-        def temperature_correction_apply(self):
+        def applyTemperatureCorrection(self):
                 if not self.temperature_present:
-                        return
+                        return self.volts_scaled
 
                 length = len(self.temps)
                 x = np.mat(self.temps).reshape((length,1))
                 x = np.hstack((x, np.ones((length, 1))))
-                y = np.mat(self.volts_raw).reshape((length,1))
-                volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
+                y = np.mat(self.volts_scaled).reshape((length,1))
+                volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
                 return volts
 
         # Show default and new regressions from voltage-vs-temperature
@@ -175,7 +199,7 @@ class CoronaBrowser(tk.Frame):
                 length = len(self.temps)
                 x = mat(self.temps).reshape((length,1))
                 x = np.hstack((x, np.ones((length, 1))))
-                y = mat(self.volts_raw).reshape((length,1))
+                y = mat(self.volts_scaled).reshape((length,1))
 
                 
                 fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
@@ -197,7 +221,7 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar_indeterminate_start('Plotting regressions...')
                 plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
                 plt.subplot(1, 3, 1)
-                plt.scatter(self.temps, self.volts_raw, s=0.01, c='black')
+                plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
                 plt.plot(sampleX[:,0], sampleY_old, c='blue', label=fit_desc_old_short)
                 plt.xlabel('Temperature (°C)')
@@ -206,11 +230,11 @@ class CoronaBrowser(tk.Frame):
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
 
-                volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_raw)
+                volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
 
                 plt.subplot(1, 3, (2, 3))
                 ax1 = plt.gca()
-                ax1.plot(self.times, self.volts_raw, label='Raw', c='black', linewidth=1)
+                ax1.plot(self.times, self.volts_scaled, label='Raw', c='black', linewidth=1)
                 ax1.plot(self.times, volts, label='Potential corrected, if using this dataset', c='red', linewidth=1)
                 ax1.plot(self.times, self.volts, label='Corrected, as applied', c='blue', linewidth=1)
                 ax1.set_xlabel('Time')
@@ -241,27 +265,37 @@ class CoronaBrowser(tk.Frame):
 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
+            print(f'Loading {fname}...')
             self.waitbar_indeterminate_start('Checking file size...')
             num_lines = sum(1 for line in open(fname))
-            #print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
+            # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
-            self.temperature_present = False
+            self.temperature_present = 0
             temperature_in_freedom_units = False
 
             with open(fname) as csv_file:
-                print(f'Loading {fname}...')
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
                 for row in csv_reader:
-                        self.waitbar_update(line_count)
+                        if line_count % 100000 == 0 and False:
+                                print(f'  Reading row {line_count}...')
+                        if line_count % 1000 == 0:
+                                self.waitbar_update(line_count)
                         line_count += 1
                         if line_count == 2:
-                                if len(row) >= 4 and row[3][0:4].lower() == "temp":
-                                        self.temperature_present = True
-                                        if "°F" in row[3]:
-                                               temperature_in_freedom_units = True 
+                                for column in range(1, len(row)):
+                                        if row[column][0:4].lower() == "temp":
+                                                # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
+                                                self.temperature_present = column
+                                                if "°F" in row[column]:
+                                                       temperature_in_freedom_units = True
+                                                       print(f'Temperature (°F) found in column {column}.')
+                                                else:
+                                                       print(f'Temperature (°C) found in column {column}.')
+
+
                         if line_count > 2:
-                            if row[1] and row[2] and ((not self.temperature_present) or row[3]):
+                            if row[1] and row[2] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
                                             times.append(datetime.datetime.strptime(row[1], self.date_format))
                                     except ValueError:
@@ -269,11 +303,11 @@ class CoronaBrowser(tk.Frame):
                                             continue;
                                     volts.append(float(row[2]))
                                     if self.temperature_present:
-                                            temps.append(float(row[3]))
+                                            temps.append(float(row[self.temperature_present]))
                             else:
                                     print(f'Line {line_count} "{row}" contains missing values. Ignoring the row.')
 
-                          
+
             self.waitbar_done()
             register_matplotlib_converters()
             length = min(len(times), len(volts))
@@ -283,7 +317,7 @@ class CoronaBrowser(tk.Frame):
                     if temperature_in_freedom_units:
                             temps =(temps - 32) * 5/9
                             temperature_in_freedom_units = False # Unnecessary, but just in case...
-                    self.regressButton.grid(row=2, column=4)
+                    self.regressButton.grid(row=3, column=4)
             times = times[0:length]
             volts = np.array(volts[0:length]).reshape((length, 1))
 
@@ -330,7 +364,7 @@ class CoronaBrowser(tk.Frame):
                                         # If looking for time-above-threshold:
                                         aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
                                         if aboveThresholdTime.seconds >= self.eventThreshold['count']:
-                                                print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
+                                                #print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
                                                 events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
                                 thresholdCounter = 0;
                         
