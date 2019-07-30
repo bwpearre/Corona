@@ -144,6 +144,10 @@ class CoronaBrowser(tk.Frame):
                         self.filename = data_filename 
                         self.applyCorrections()
 
+        def setVoltageScalingFactor(self, vsf):
+                self.voltageScalingFactor = vsf
+                self.voltageScalingFactorBox.delete(0, END)
+                self.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
                         
         def getVoltageScalingFactor(self):
                 try:
@@ -265,12 +269,15 @@ class CoronaBrowser(tk.Frame):
 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
-            print(f'Loading {fname}...')
+            print(f'----- Loading {fname} -----')
             self.waitbar_indeterminate_start('Checking file size...')
             num_lines = sum(1 for line in open(fname))
             # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
             self.temperature_present = 0
+            date_column = -1
+            voltage_column = -1
+            scaled_column = -1
             temperature_in_freedom_units = False
 
             with open(fname) as csv_file:
@@ -283,7 +290,11 @@ class CoronaBrowser(tk.Frame):
                                 self.waitbar_update(line_count)
                         line_count += 1
                         if line_count == 2:
+                                # This is the line with all the header info. Figure out what we have...
                                 for column in range(1, len(row)):
+                                        if row[column][0:4].lower() == "date":
+                                                print(f'Date found in column {column}.')
+                                                date_column = column
                                         if row[column][0:4].lower() == "temp":
                                                 # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
                                                 self.temperature_present = column
@@ -292,20 +303,40 @@ class CoronaBrowser(tk.Frame):
                                                        print(f'Temperature (°F) found in column {column}.')
                                                 else:
                                                        print(f'Temperature (°C) found in column {column}.')
+                                        if row[column][0:4].lower() == 'volt':
+                                                voltage_column = column
+                                                print(f'Voltage found in column {column}.')
+                                        if row[column][0:6].lower() == 'scaled':
+                                                print(f'Scaled Series found in column {column}.')
+                                                scaled_column = column
 
+                                # If there's no "voltage" column but there is a "scaled" column, I guess we just use that instead... and guess that the voltage_scaling_factor should probably be 2                  
+                                if scaled_column >= 0:
+                                        if voltage_column == -1:
+                                                print('Could not find "Volt" but did find "Scaled Series". Guessing that the latter is scaled voltage, and setting my internal scaling factor to 1.')
+                                                voltage_column = scaled_column
+                                                self.setVoltageScalingFactor(1)
+                                        else:
+                                                print('Found both "Volt" and "Scaled Series". Using "Volt", but setting my internal scaling factor to 2. Please verify.')
+                                                self.setVoltageScalingFactor(2)
+                                else:
+                                        print('Found Voltage, but not Scaled Series. Guessing that my internal scaling factor should be 1. Please verify.')
+                                        self.setVoltageScalingFactor(1)
+                                        
 
                         if line_count > 2:
-                            if row[1] and row[2] and ((not self.temperature_present) or row[self.temperature_present]):
+                            if row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
-                                            times.append(datetime.datetime.strptime(row[1], self.date_format))
+                                            times.append(datetime.datetime.strptime(row[date_column], self.date_format))
                                     except ValueError:
                                             print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
                                             continue;
-                                    volts.append(float(row[2]))
+                                    volts.append(float(row[voltage_column]))
                                     if self.temperature_present:
                                             temps.append(float(row[self.temperature_present]))
                             else:
                                     print(f'Line {line_count} "{row}" contains missing values. Ignoring the row.')
+
 
 
             self.waitbar_done()
