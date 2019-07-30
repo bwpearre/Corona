@@ -324,6 +324,8 @@ class CoronaBrowser(tk.Frame):
                                         self.setVoltageScalingFactor(1)
                                         
 
+
+                        # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                         if line_count > 2:
                             if row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
