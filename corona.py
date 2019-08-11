@@ -327,7 +327,9 @@ class CoronaBrowser(tk.Frame):
 
                         # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                         if line_count > 2:
-                            if row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
+                            if len(row) <= max([date_column, voltage_column, self.temperature_present]):
+                                    print(f'Line {line_count}: row is incomplete. Corrupt/incomplete file?')
+                            elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
                                             times.append(datetime.datetime.strptime(row[date_column], self.date_format))
                                     except ValueError:
