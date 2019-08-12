@@ -55,9 +55,11 @@ class CoronaBrowser(tk.Frame):
                 tk.Label(self, text='Voltage scaling factor:').grid(row=row, column=0)
                 self.voltageScalingFactor = 1
                 self.voltageScalingFactorBox = tk.Entry(self, width=8)
+                self.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+                self.voltageScalingFactorBox['state'] = 'readonly'
                 self.voltageScalingFactorBox.grid(row=row, column=1, sticky='W')
                 self.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
-                self.voltageScalingButton = tk.Button(self, text="Apply", command=self.applyCorrections)
+                self.voltageScalingButton = tk.Button(self, text="Apply", command=self.applyCorrections, state='disabled')
                 self.voltageScalingButton.grid(row=row, column=2)
                 row += 1
                 tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=row, column=0)
@@ -136,6 +138,8 @@ class CoronaBrowser(tk.Frame):
                         self.regressButton.grid_forget()
                         self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
                         self.filename = data_filename 
+                        self.voltageScalingFactorBox['state'] = 'normal'
+                        self.voltageScalingButton['state'] = 'normal'
                         self.applyCorrections()
 
         def setVoltageScalingFactor(self, vsf):
@@ -314,7 +318,9 @@ class CoronaBrowser(tk.Frame):
 
                         # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                         if line_count > 2:
-                            if row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
+                            if len(row) <= max([date_column, voltage_column, self.temperature_present]):
+                                    print(f'***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
+                            elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
                                             times.append(datetime.datetime.strptime(row[date_column], self.date_format))
                                     except ValueError:
