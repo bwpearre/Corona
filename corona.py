@@ -1,15 +1,11 @@
-import pandas as pd
+#import pandas as pd
 import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk, END
 import matplotlib
 #matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-from pandas.plotting import register_matplotlib_converters
-from bokeh.plotting import figure, show
-from bokeh.models.sources import ColumnDataSource
-from bokeh.models import DatetimeTickFormatter, HoverTool, BoxZoomTool, PanTool, WheelPanTool, ResetTool, ZoomInTool, ZoomOutTool
-from bokeh.models import LinearAxis, Range1d
+#from pandas.plotting import register_matplotlib_converters
 import numpy as np
 from numpy import mat # matrix
 from numpy.linalg import inv
@@ -72,9 +68,7 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=row, column=4, sticky='W');
                 row += 1
-                self.rbButton = tk.Button(self, text="Detect (Bokeh)", command=self.plotEventsBokeh)
-                self.rbButton.grid(row=row, column=0)
-                self.rmplButton = tk.Button(self, text="Detect (MatPlotLib)", command=self.plotEventsMPL)
+                self.rmplButton = tk.Button(self, text="Detect + plot", command=self.plotEvents)
                 self.rmplButton.grid(row=row, column=1)
                 self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
                 row += 1
@@ -171,13 +165,6 @@ class CoronaBrowser(tk.Frame):
 
 
         def plotEvents(self):
-                self.plotEventsMPL()
-        
-        def plotEventsBokeh(self):
-                self.events = self.find_events(self.times, self.volts)
-                self.plot_voltages_bokeh(self.times, self.volts, self.temps, self.events)
-                
-        def plotEventsMPL(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
                         
@@ -342,7 +329,7 @@ class CoronaBrowser(tk.Frame):
 
 
             self.waitbar_done()
-            register_matplotlib_converters()
+            #register_matplotlib_converters()
             length = min(len(times), len(volts))
             if self.temperature_present:
                     length = min(length, len(temps))
@@ -403,35 +390,6 @@ class CoronaBrowser(tk.Frame):
                         
                 self.waitbar_done()
                 return events
-
-        # Plot voltage vs time using the Bokeh library.
-        def plot_voltages_bokeh(self, times, volts, temps, events):
-                self.waitbar_indeterminate_start('Plotting...')
-                p = figure(plot_width=3, plot_height=1, x_axis_type='datetime',
-                           tools=[BoxZoomTool(),
-                                  BoxZoomTool(dimensions='width'),
-                                  WheelPanTool(dimension='width'),
-                                  ZoomOutTool(factor=0.5),
-                                  ZoomOutTool(factor=0.5, dimensions='width'),
-                                  ResetTool()],
-                           title=self.filename)
-                p.sizing_mode = 'scale_width'
-                p.yaxis.axis_label = 'Potential (mV)'
-                p.line(x = times, y = volts, legend='Potential', color='black')
-                p.y_range = Range1d(start=min(volts), end=max(volts))
-                if self.temperature_present:
-                        p.extra_y_ranges = {"foo": Range1d(start=min(temps), end=max(temps))}
-                        p.add_layout(LinearAxis(y_range_name="foo", axis_label='Temperature (°C)'), 'right')
-                        p.line(x = times, y = temps, legend='Temperature', color='blue', y_range_name="foo")
-                p.xaxis[0].formatter = DatetimeTickFormatter(days='%Y-%m-%d %H:%M', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
-                                                             minutes='%Y-%m-%d %H:%M', minsec='%Y-%m-%d %H:%M:%S',
-                                                             seconds='%Y-%m-%d %H:%M:%S')
-                p.circle([times[i] for i in events.end_indices], [volts[i] for i in events.end_indices],
-                         size=[math.sqrt(i) for i in events.sizes], legend='event?', color='red', alpha=0.7)
-
-                show(p)
-                self.waitbar_indeterminate_done()
-
 
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
