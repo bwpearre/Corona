@@ -1,7 +1,7 @@
 #import pandas as pd
 import datetime
 import tkinter as tk
-from tkinter import filedialog, ttk, END
+from tkinter import filedialog, ttk, END, BooleanVar
 import matplotlib
 #matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -37,6 +37,9 @@ class CoronaBrowser(tk.Frame):
 
                 # Define the weird date format
                 self.date_format = '%m/%d/%y %I:%M:%S %p'
+                
+                # Helper vars:
+                self.plotTemperatureWithPotential = BooleanVar()
 
                 # Create root window:
                 self.grid()
@@ -71,7 +74,9 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox.grid(row=row, column=4, sticky='W');
                 row += 1
                 self.rmplButton = tk.Button(self, text="Detect + plot", command=self.plotEvents)
-                self.rmplButton.grid(row=row, column=1)
+                self.rmplButton.grid(row=row, column=0)
+                self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
+                self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
                 self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
@@ -319,7 +324,7 @@ class CoronaBrowser(tk.Frame):
                         # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                         if line_count > 2:
                             if len(row) <= max([date_column, voltage_column, self.temperature_present]):
-                                    print(f'***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
+                                    print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
                                             times.append(datetime.datetime.strptime(row[date_column], self.date_format))
@@ -400,12 +405,10 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
 
-                if self.temperature_present:
-                        fig, ax1 = plt.subplots(figsize=(self.screendims_inches[0]*0.9,
-                                                         self.screendims_inches[1]*0.4))
-                        plot_v_to = ax1
+                if self.temperature_present & self.plotTemperatureWithPotential.get():
+                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                        ax1 = fig.gca()
                         
-
                         color = 'blue'
                         ax1.set_xlabel('Time')
                         ax1.set_ylabel('Potential (V)', color=color)
@@ -428,13 +431,7 @@ class CoronaBrowser(tk.Frame):
                                         ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
                                                  c='red', linewidth=3)
-                                #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
-                                #            s=events.sizes, c='red', label='Event?')
-                        #if len(events.start_indices):
-                        #        plt.legend([l1, l2, l3],["Potential", "Temperature", "Event?"])
-                        #else:
-                        #        plt.legend([l1, l2], ["Potential", "Temperature"])
-                                
+
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
@@ -459,7 +456,6 @@ class CoronaBrowser(tk.Frame):
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
-                
 
 cor = CoronaBrowser()
 cor.master.title('Corona browser')
