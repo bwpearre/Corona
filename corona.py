@@ -211,34 +211,36 @@ class CoronaBrowser(tk.Frame):
                 y = mat(self.volts_scaled).reshape((length,1))
 
                 
+                xn = np.reshape(self.temps, -1)
+                yn = np.reshape(self.volts_scaled, -1)
+
                 #fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
                 #fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
-                fit_desc_old = r'$V = ' + f'{self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}$'
+                mse_old = np.sum(np.square(exponential(xn, *self.fit_exp) - yn))/xn.size
+                fit_desc_old = r'V = ' + f'{self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}\n       MSE = {mse_old}'
                 fit_desc_old_short = r'$V \approx ' + f'{self.fit_exp[0]:.3g} \cdot \exp({self.fit_exp[1]:.3g} \cdot T) + {self.fit_exp[2]:.3g}$'
-                print(f'Current least-squares linear regression is {fit_desc_old}')
+                print(f'\n  Saved regression is {fit_desc_old}')
 
                 # Compute the new least-squares fit:
                 fit = (x.T*x).I*x.T*y
-                
+                x_linear_fit = x * fit
+                mse_linear = np.sum(np.square(y - x_linear_fit[:,0]))/xn.size
                 fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
                 fit_desc_short = r'From this set: $V^* \approx ' + f'{fit[0,0]:.3g} \cdot T + {fit[1,0]:.3g}$'
-                print(f'    Regression using this dataset would be {fit_desc}')
+                print(f'  Linear regression using this dataset would be {fit_desc}\n       MSE = {mse_linear}')
 
                 # Exponential fit:
                 
-                xn = np.reshape(self.temps, -1)
-                print(xn.shape)
-                yn = np.reshape(self.volts_scaled, -1)
-                print(yn.shape)
-
                 exp_pars, exp_cov = curve_fit(exponential, xdata=xn,
                                               ydata=yn,
                                               p0 = (0,0,-3),
                                               maxfev=10000)
-                fit_desc_exp = r'$V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}$'
+                mse_exp_new = np.sum(np.square(exponential(xn, *exp_pars) - yn))/xn.size
+
+                fit_desc_exp = r'V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}\n       MSE = {mse_exp_new}'
                 #fit_desc_exp = r'$V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * ( T - {exp+pa)$'
                 fit_desc_exp_short = r'$V \approx ' + f'{exp_pars[0]:.3g} \cdot \exp({exp_pars[1]:.3g} \cdot T) + {exp_pars[2]:.3g}$'
-                print(f'   Exponential regression is {fit_desc_exp}')
+                print(f'  Exponential regression is {fit_desc_exp}')
 
                 sampleX_nl = np.linspace(min(self.temps)-0.1, max(self.temps+0.1), num=100)
                 
