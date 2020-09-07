@@ -12,8 +12,14 @@ from numpy.linalg import inv
 import math
 import time
 import pdb
+from scipy.optimize import curve_fit
+import traceback, sys, code
 
 # 20311011 is good
+
+def exponential(x, a, b, c):
+        #return a + b * x + c * np.square(x)
+        return a * np.exp(b*x) + c
 
 class Events:
         def __init__(self):
@@ -48,6 +54,8 @@ class CoronaBrowser(tk.Frame):
                 # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
                 self.fit = mat([[-0.020992708021557917],
                                [5.272377975649473]])
+                # Exponential temperature fit parameters computed from 20121725_1.csv
+                self.fit_exp = (1.7137714544047866, -0.07977523230422238, 4.493155756244882)
 
         # Set up the main window.
         def createWidgets(self):
@@ -187,7 +195,8 @@ class CoronaBrowser(tk.Frame):
                 x = np.mat(self.temps).reshape((length,1))
                 x = np.hstack((x, np.ones((length, 1))))
                 y = np.mat(self.volts_scaled).reshape((length,1))
-                volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
+                #volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
+                volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
                 return volts
 
         # Show default and new regressions from voltage-vs-temperature
@@ -202,8 +211,10 @@ class CoronaBrowser(tk.Frame):
                 y = mat(self.volts_scaled).reshape((length,1))
 
                 
-                fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
-                fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
+                #fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
+                #fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
+                fit_desc_old = r'$V = ' + f'{self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}$'
+                fit_desc_old_short = r'$V \approx ' + f'{self.fit_exp[0]:.3g} \cdot \exp({self.fit_exp[1]:.3g} \cdot T) + {self.fit_exp[2]:.3g}$'
                 print(f'Current least-squares linear regression is {fit_desc_old}')
 
                 # Compute the new least-squares fit:
@@ -213,17 +224,39 @@ class CoronaBrowser(tk.Frame):
                 fit_desc_short = r'From this set: $V^* \approx ' + f'{fit[0,0]:.3g} \cdot T + {fit[1,0]:.3g}$'
                 print(f'    Regression using this dataset would be {fit_desc}')
 
-                sampleX = mat([[min(self.temps)-0.3, 1],
-                               [max(self.temps)+0.3, 1]])
+                # Exponential fit:
+                
+                xn = np.reshape(self.temps, -1)
+                print(xn.shape)
+                yn = np.reshape(self.volts_scaled, -1)
+                print(yn.shape)
+
+                exp_pars, exp_cov = curve_fit(exponential, xdata=xn,
+                                              ydata=yn,
+                                              p0 = (0,0,-3),
+                                              maxfev=10000)
+                fit_desc_exp = r'$V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}$'
+                #fit_desc_exp = r'$V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * ( T - {exp+pa)$'
+                fit_desc_exp_short = r'$V \approx ' + f'{exp_pars[0]:.3g} \cdot \exp({exp_pars[1]:.3g} \cdot T) + {exp_pars[2]:.3g}$'
+                print(f'   Exponential regression is {fit_desc_exp}')
+
+                sampleX_nl = np.linspace(min(self.temps)-0.1, max(self.temps+0.1), num=100)
+                
+                sampleY_nl = exponential(sampleX_nl, *exp_pars)
+                sampleX = [min(self.temps)-0.3, max(self.temps)+0.3]
+                sampleX = mat(sampleX).reshape((2, 1))
+                sampleX = np.hstack((sampleX, np.ones((2, 1))))
                 sampleY = sampleX * fit
                 sampleY_old = sampleX * self.fit
-                
+                sampleY_old_exp = exponential(sampleX_nl, *self.fit_exp)
+
                 self.waitbar_indeterminate_start('Plotting regressions...')
                 plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
-                plt.plot(sampleX[:,0], sampleY_old, c='blue', label=fit_desc_old_short)
+                plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
+                plt.plot(sampleX_nl, sampleY_nl, c='cyan', label=fit_desc_exp_short)
                 plt.xlabel('Temperature (°C)')
                 plt.ylabel('Potential (V)')
                 plt.title('Linear regressions')
@@ -231,12 +264,14 @@ class CoronaBrowser(tk.Frame):
                 plt.get_current_fig_manager().toolbar.zoom()
 
                 volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
+                volts_nl = y - exponential(self.temps, *exp_pars) + np.mean(self.volts_scaled)
 
                 plt.subplot(1, 3, (2, 3))
                 ax1 = plt.gca()
                 ax1.plot(self.times, self.volts_scaled, label='Raw', c='black', linewidth=1)
-                ax1.plot(self.times, volts, label='Potential corrected, if using this dataset', c='red', linewidth=1)
+                ax1.plot(self.times, volts, label='Potential new linear correction, if using this dataset', c='red', linewidth=1)
                 ax1.plot(self.times, self.volts, label='Corrected, as applied', c='blue', linewidth=1)
+                ax1.plot(self.times, volts_nl, label='Potential new exponential correction', c='cyan', linewidth=1)
                 ax1.set_xlabel('Time')
 
                 ax2 = ax1.twinx()
@@ -459,6 +494,13 @@ class CoronaBrowser(tk.Frame):
 
 cor = CoronaBrowser()
 cor.master.title('Corona browser')
-cor.mainloop()
-cor.destroy()
-
+try:
+        cor.mainloop()
+except:
+        type, value, tb = sys.exc_info()
+        traceback.print_exc()
+        last_frame = lambda tb=tb: last_frame(tb.tb_next) if tb.tb_next else tb
+        frame = last_frame().tb_frame
+        ns = dict(frame.f_globals)
+        ns.update(frame.f_locals)
+        code.interact(local=ns)
