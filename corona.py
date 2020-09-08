@@ -217,17 +217,15 @@ class CoronaBrowser(tk.Frame):
                 #fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
                 #fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
                 mse_old = np.sum(np.square(exponential(xn, *self.fit_exp) - yn))/xn.size
-                fit_desc_old = r'V = ' + f'{self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}\n       MSE = {mse_old}'
-                fit_desc_old_short = r'$V \approx ' + f'{self.fit_exp[0]:.3g} \cdot \exp({self.fit_exp[1]:.3g} \cdot T) + {self.fit_exp[2]:.3g}$'
-                print(f'\n  Saved regression is {fit_desc_old}')
+                print(f'\n  Saved fit is V = {self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}\n       MSE = {mse_old:.3g}')
+                fit_desc_old_short = r'(saved) $V \approx ' + f'{self.fit_exp[0]:.3g} \cdot \exp({self.fit_exp[1]:.3g} \cdot T) + {self.fit_exp[2]:.3g}$'
 
-                # Compute the new least-squares fit:
+                # Compute a new linear least-squares fit:
                 fit = (x.T*x).I*x.T*y
                 x_linear_fit = x * fit
                 mse_linear = np.sum(np.square(y - x_linear_fit[:,0]))/xn.size
-                fit_desc = f'V = {fit[0,0]} * T + {fit[1,0]}'
-                fit_desc_short = r'From this set: $V^* \approx ' + f'{fit[0,0]:.3g} \cdot T + {fit[1,0]:.3g}$'
-                print(f'  Linear regression using this dataset would be {fit_desc}\n       MSE = {mse_linear}')
+                print(f'  Linear fit (this set) would be V = {fit[0,0]} * T + {fit[1,0]}\n       MSE = {mse_linear:.8f}')
+                fit_desc_short = r'(this set) $V \approx ' + f'{fit[0,0]:.3g} \cdot T + {fit[1,0]:.3g}$'
 
                 # Exponential fit:
                 
@@ -237,10 +235,8 @@ class CoronaBrowser(tk.Frame):
                                               maxfev=10000)
                 mse_exp_new = np.sum(np.square(exponential(xn, *exp_pars) - yn))/xn.size
 
-                fit_desc_exp = r'V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}\n       MSE = {mse_exp_new}'
-                #fit_desc_exp = r'$V = ' + f'{exp_pars[0]} * exp({exp_pars[1]} * ( T - {exp+pa)$'
-                fit_desc_exp_short = r'$V \approx ' + f'{exp_pars[0]:.3g} \cdot \exp({exp_pars[1]:.3g} \cdot T) + {exp_pars[2]:.3g}$'
-                print(f'  Exponential regression is {fit_desc_exp}')
+                print(f'  Exponential fit (this set) would be V = {exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}\n       MSE = {mse_exp_new:.8f}')
+                fit_desc_exp_short = r'(this set) $V \approx ' + f'{exp_pars[0]:.3g} \cdot \exp({exp_pars[1]:.3g} \cdot T) + {exp_pars[2]:.3g}$'
 
                 sampleX_nl = np.linspace(min(self.temps)-0.1, max(self.temps+0.1), num=100)
                 
@@ -256,9 +252,9 @@ class CoronaBrowser(tk.Frame):
                 plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
-                plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
                 plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
                 plt.plot(sampleX_nl, sampleY_nl, c='cyan', label=fit_desc_exp_short)
+                plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
                 plt.xlabel('Temperature (°C)')
                 plt.ylabel('Potential (V)')
                 plt.title('Linear regressions')
