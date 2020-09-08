@@ -217,7 +217,7 @@ class CoronaBrowser(tk.Frame):
                 #fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
                 #fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
                 mse_old = np.sum(np.square(exponential(xn, *self.fit_exp) - yn))/xn.size
-                print(f'\n  Saved fit is V = {self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}\n       MSE = {mse_old:.3g}')
+                print(f'\n  Saved fit is V = {self.fit_exp[0]} * exp({self.fit_exp[1]} * T) + {self.fit_exp[2]}\n       MSE = {mse_old:.8f}')
                 fit_desc_old_short = r'(saved) $V \approx ' + f'{self.fit_exp[0]:.3g} \cdot \exp({self.fit_exp[1]:.3g} \cdot T) + {self.fit_exp[2]:.3g}$'
 
                 # Compute a new linear least-squares fit:
