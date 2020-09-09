@@ -3,7 +3,7 @@ import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk, END, BooleanVar
 import matplotlib
-#matplotlib.use("TkAgg")
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 #from pandas.plotting import register_matplotlib_converters
 import numpy as np
@@ -95,12 +95,18 @@ class CoronaBrowser(tk.Frame):
                 row += 1
                 self.debugButton = tk.Button(self, text="Debug", command=self.debug)
                 self.debugButton.grid(row=row, column=3)
-                self.quitButton = tk.Button(self, text="Quit", command=self.quit)
+                self.quitButton = tk.Button(self, text="Quit", command=self.close_and_quit)
                 self.quitButton.grid(row=row, column=4)
 
                 self.eventThreshold = {'volts': 0.02, 'count': 40}
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
                 self.detectionCountBox.insert(0, self.eventThreshold['count'])
+
+
+        # Clean up matplotlib windows etc
+        def close_and_quit(self):
+                matplotlib.pyplot.close('all')
+                sys.exit()
                 
 
         # Set the waitbar up for a new task
@@ -249,7 +255,8 @@ class CoronaBrowser(tk.Frame):
                 sampleY_old_exp = exponential(sampleX_nl, *self.fit_exp)
 
                 self.waitbar_indeterminate_start('Plotting regressions...')
-                plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                plt.figure(2, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                plt.clf();
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
@@ -440,6 +447,7 @@ class CoronaBrowser(tk.Frame):
 
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
                         fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                        fig.clf()
                         ax1 = fig.gca()
                         
                         color = 'blue'
@@ -468,7 +476,8 @@ class CoronaBrowser(tk.Frame):
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
-                        plt.figure(figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
+                        plt.figure(1, figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
+                        plt.clf()
 
                         plt.plot(times, volts, label='Potential', c='blue', linewidth=1)
                         for i in range(len(events.start_indices)):
@@ -492,13 +501,13 @@ class CoronaBrowser(tk.Frame):
 
 cor = CoronaBrowser()
 cor.master.title('Corona browser')
-try:
-        cor.mainloop()
-except:
-        type, value, tb = sys.exc_info()
-        traceback.print_exc()
-        last_frame = lambda tb=tb: last_frame(tb.tb_next) if tb.tb_next else tb
-        frame = last_frame().tb_frame
-        ns = dict(frame.f_globals)
-        ns.update(frame.f_locals)
-        code.interact(local=ns)
+#try:
+cor.mainloop()
+# except:
+#         type, value, tb = sys.exc_info()
+#         traceback.print_exc()
+#         last_frame = lambda tb=tb: last_frame(tb.tb_next) if tb.tb_next else tb
+#         frame = last_frame().tb_frame
+#         ns = dict(frame.f_globals)
+#         ns.update(frame.f_locals)
+#         code.interact(local=ns)
