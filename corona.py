@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, END, BooleanVar
 import matplotlib
 matplotlib.use("TkAgg")
+matplotlib.interactive(True)
 import matplotlib.pyplot as plt
 #from pandas.plotting import register_matplotlib_converters
 import numpy as np
@@ -191,6 +192,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
+                self.temperature_show_old_and_new_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -251,7 +253,7 @@ class CoronaBrowser(tk.Frame):
                 sampleX = [min(self.temps)-0.3, max(self.temps)+0.3]
                 sampleX = mat(sampleX).reshape((2, 1))
                 sampleX = np.hstack((sampleX, np.ones((2, 1))))
-                sampleY = sampleX * fit
+                sampleY_linear = sampleX * fit
                 sampleY_old = sampleX * self.fit
                 sampleY_old_exp = exponential(sampleX_nl, *self.fit_exp)
 
@@ -262,7 +264,7 @@ class CoronaBrowser(tk.Frame):
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
                 plt.plot(sampleX_nl, sampleY_nl, c='cyan', label=fit_desc_exp_short)
-                plt.plot(sampleX[:,0], sampleY, c='red', label=fit_desc_short)
+                plt.plot(sampleX[:,0], sampleY_linear, c='red', linestyle="--", label=fit_desc_short)
                 plt.xlabel('Temperature (°C)')
                 plt.ylabel('Potential (V)')
                 plt.title('Linear regressions')
