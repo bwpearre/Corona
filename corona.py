@@ -107,7 +107,7 @@ class CoronaBrowser(tk.Frame):
 
         # Clean up matplotlib windows etc
         def close_and_quit(self):
-                matplotlib.pyplot.close('all')
+                plt.close('all')
                 sys.exit()
                 
 
@@ -211,6 +211,7 @@ class CoronaBrowser(tk.Frame):
         # Show default and new regressions from voltage-vs-temperature
         def temperature_show_old_and_new_corrections(self):
                 if not self.temperature_present:
+                        plt.close(2)
                         return
 
                 self.waitbar_indeterminate_start('Computing regression...')
