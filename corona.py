@@ -32,6 +32,7 @@ class Events:
                 self.end_indices.append(end)
                 self.sizes.append(size)
 
+                
 class CoronaBrowser(tk.Frame):
         
         def __init__(self, master=None):
