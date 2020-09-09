@@ -63,7 +63,7 @@ class CoronaBrowser(tk.Frame):
         def createWidgets(self):
                 row = 0
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
-                self.loadButton.grid(row=row, column=0, columnspan=5)
+                self.loadButton.grid(row=row, column=0, columnspan=6)
                 row += 1
                 tk.Label(self, text='Voltage scaling factor:').grid(row=row, column=0)
                 self.voltageScalingFactor = 1
@@ -83,11 +83,12 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=row, column=4, sticky='W');
                 row += 1
-                self.rmplButton = tk.Button(self, text="Detect + plot", command=self.plotEvents)
+                self.rmplButton = tk.Button(self, text="Detect + plot", command=self.plotEvents, state='disabled')
                 self.rmplButton.grid(row=row, column=0)
                 self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
                 self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
+                self.useNewRegressionButton = tk.Button(self, text='Use new regression this session', command=self.use_new_correction)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=row, column=0, columnspan=5)
@@ -157,10 +158,14 @@ class CoronaBrowser(tk.Frame):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
                         self.regressButton.grid_forget()
+                        self.useNewRegressionButton.grid_forget()
                         self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
                         self.filename = data_filename 
                         self.voltageScalingFactorBox['state'] = 'normal'
+                        self.rmplButton['state'] = 'normal'
                         self.voltageScalingButton['state'] = 'normal'
+                        self.useNewRegressionButton['state'] = 'disabled'
+
                         self.applyCorrections()
 
         def setVoltageScalingFactor(self, vsf):
@@ -247,6 +252,8 @@ class CoronaBrowser(tk.Frame):
 
                 print(f'  Exponential fit (this set) would be V = {exp_pars[0]} * exp({exp_pars[1]} * T) + {exp_pars[2]}\n       MSE = {mse_exp_new:.8f}')
                 fit_desc_exp_short = r'(this set) $V \approx ' + f'{exp_pars[0]:.3g} \cdot \exp({exp_pars[1]:.3g} \cdot T) + {exp_pars[2]:.3g}$'
+                self.fit_exp_new = exp_pars
+                self.useNewRegressionButton['state'] = 'normal'
 
                 sampleX_nl = np.linspace(min(self.temps)-0.1, max(self.temps+0.1), num=100)
                 
@@ -295,7 +302,12 @@ class CoronaBrowser(tk.Frame):
                 plt.show()
                 self.waitbar_indeterminate_done();
 
+        # Copy new fit parameters to default fit param location
+        def use_new_correction(self):
+                self.fit_exp = self.fit_exp_new
+                self.applyCorrections()
 
+                
         # Faster loading. Note that Python grows lists sensibly, so
         # repeated calls to append() aren't as inefficient as they
         # look.
@@ -393,6 +405,8 @@ class CoronaBrowser(tk.Frame):
                             temps =(temps - 32) * 5/9
                             temperature_in_freedom_units = False # Unnecessary, but just in case...
                     self.regressButton.grid(row=3, column=4)
+                    self.useNewRegressionButton.grid(row=3, column=5)
+                    self.useNewRegressionButton['state'] = 'disabled'
             times = times[0:length]
             volts = np.array(volts[0:length]).reshape((length, 1))
 
