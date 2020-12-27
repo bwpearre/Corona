@@ -1,4 +1,3 @@
-#import pandas as pd
 import datetime
 import tkinter as tk
 from tkinter import filedialog, ttk, END, BooleanVar
@@ -6,7 +5,6 @@ import matplotlib
 matplotlib.use("TkAgg")
 matplotlib.interactive(True)
 import matplotlib.pyplot as plt
-#from pandas.plotting import register_matplotlib_converters
 import numpy as np
 from numpy import mat # matrix
 from numpy.linalg import inv
@@ -15,6 +13,7 @@ import time
 import pdb
 from scipy.optimize import curve_fit
 import traceback, sys, code
+import scipy.stats
 
 # 20311011 is good
 
@@ -188,8 +187,13 @@ class CoronaBrowser(tk.Frame):
                 self.getVoltageScalingFactor()
                 self.volts_scaled = self.volts_raw * self.voltageScalingFactor
 
-                # Correct for sensor temperature
+                # Correct for sensor temperature. Preserves mean value (i.e. not mean-0)
                 self.volts = self.applyTemperatureCorrection()
+
+                self.common_temp = scipy.stats.mode(self.volts)[0][0]
+                print(f'Temperature: mode is {self.common_temp}')
+                self.volts = self.volts - self.common_temp
+                self.volts_scaled = self.volts_scaled - self.common_temp
                 
                 self.plotEvents()
 
@@ -206,8 +210,8 @@ class CoronaBrowser(tk.Frame):
                         return self.volts_scaled
 
                 length = len(self.temps)
-                x = np.mat(self.temps).reshape((length,1))
-                x = np.hstack((x, np.ones((length, 1))))
+                #x = np.mat(self.temps).reshape((length,1))
+                #x = np.hstack((x, np.ones((length, 1))))
                 y = np.mat(self.volts_scaled).reshape((length,1))
                 #volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
                 volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
