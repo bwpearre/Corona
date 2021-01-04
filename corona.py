@@ -58,11 +58,30 @@ class CoronaBrowser(tk.Frame):
                 # Exponential temperature fit parameters computed from 20121725_1.csv
                 self.fit_exp = (1.7137714544047866, -0.07977523230422238, 4.493155756244882)
 
+
+        def event_detection_enabled(self, state):
+                if state:
+                        self.detectionVoltageLabel.grid()
+                        self.detectionVoltageVoltsLabel.grid()
+                        self.detectionVoltageBox.grid()
+                        self.detectionVoltageSecondsLabel.grid()
+                        self.detectionCountBox.grid()
+                        self.rmplButton['text'] = 'Detect + plot'
+                else:
+                        self.detectionVoltageLabel.grid_remove()
+                        self.detectionVoltageVoltsLabel.grid_remove()
+                        self.detectionVoltageBox.grid_remove()
+                        self.detectionVoltageSecondsLabel.grid_remove()
+                        self.detectionCountBox.grid_remove()
+                        self.rmplButton['text'] = 'Plot'
+                
         # Set up the main window.
         def createWidgets(self):
                 row = 0
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
-                self.loadButton.grid(row=row, column=0, columnspan=6)
+                self.loadButton.grid(row=row, column=0, columnspan=4)
+                self.saveButton = tk.Button(self, text='Save', command=self.saveFile, state='disabled')
+                self.saveButton.grid(row=row, column=6)
                 row += 1
                 tk.Label(self, text='Voltage scaling factor:').grid(row=row, column=0)
                 self.voltageScalingFactor = 1
@@ -74,19 +93,22 @@ class CoronaBrowser(tk.Frame):
                 self.voltageScalingButton = tk.Button(self, text="Apply", command=self.applyCorrections, state='disabled')
                 self.voltageScalingButton.grid(row=row, column=2)
                 row += 1
-                tk.Label(self, text='Detection thresholds:', font=('bold')).grid(row=row, column=0)
-                tk.Label(self, text='Volts:').grid(row=row, column=1, sticky='E')
+                self.detectionVoltageLabel = tk.Label(self, text='Detection thresholds:', font=('bold'))
+                self.detectionVoltageLabel.grid(row=row, column=0)
+                self.detectionVoltageVoltsLabel = tk.Label(self, text='Volts:')
+                self.detectionVoltageVoltsLabel.grid(row=row, column=1, sticky='E')
                 self.detectionVoltageBox = tk.Entry(self, width=5)
                 self.detectionVoltageBox.grid(row=row, column=2, sticky='W');
-                tk.Label(self, text='Seconds:').grid(row=row, column=3, sticky='E')
+                self.detectionVoltageSecondsLabel = tk.Label(self, text='Seconds:')
+                self.detectionVoltageSecondsLabel.grid(row=row, column=3, sticky='E')
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=row, column=4, sticky='W');
                 row += 1
-                self.rmplButton = tk.Button(self, text="Detect + plot", command=self.plotEvents, state='disabled')
+                self.rmplButton = tk.Button(self, text="Plot", command=self.plotEvents, state='disabled')
                 self.rmplButton.grid(row=row, column=0)
                 self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
-                self.regressButton = tk.Button(self, text='Replot potential vs temp', command=self.temperature_show_old_and_new_corrections)
+                self.regressButton = tk.Button(self, text='Plot potential vs temp', command=self.temperature_show_old_and_new_corrections)
                 self.useNewRegressionButton = tk.Button(self, text='Use new regression this session', command=self.use_new_correction)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
@@ -103,6 +125,7 @@ class CoronaBrowser(tk.Frame):
                 self.eventThreshold = {'volts': 0.02, 'count': 40}
                 self.detectionVoltageBox.insert(0, self.eventThreshold['volts'])
                 self.detectionCountBox.insert(0, self.eventThreshold['count'])
+                self.event_detection_enabled(False)
 
 
         # Clean up matplotlib windows etc
@@ -160,12 +183,15 @@ class CoronaBrowser(tk.Frame):
                         self.useNewRegressionButton.grid_forget()
                         self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
                         self.filename = data_filename 
-                        self.voltageScalingFactorBox['state'] = 'normal'
                         self.rmplButton['state'] = 'normal'
-                        self.voltageScalingButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
+                        if self.temperature_present:
+                                self.event_detection_enabled(False)
+                        else:
+                                self.event_detection_enabled(True)
 
                         self.applyCorrections()
+                        self.saveButton['state'] = 'normal'
 
         def setVoltageScalingFactor(self, vsf):
                 self.voltageScalingFactor = vsf
@@ -191,9 +217,11 @@ class CoronaBrowser(tk.Frame):
                 self.volts = self.applyTemperatureCorrection()
 
                 self.common_temp = scipy.stats.mode(self.volts)[0][0]
-                print(f'Temperature: mode is {self.common_temp}')
-                self.volts = self.volts - self.common_temp
-                self.volts_scaled = self.volts_scaled - self.common_temp
+                if self.temperature_present:
+                        t = ' after temperature correction'
+                else:
+                        t = ''
+                print(f'Potential: mode is {self.common_temp} V{t} (fyi; not used)')
                 
                 self.plotEvents()
 
@@ -288,9 +316,9 @@ class CoronaBrowser(tk.Frame):
 
                 plt.subplot(1, 3, (2, 3))
                 ax1 = plt.gca()
-                ax1.plot(self.times, self.volts_scaled, label='Raw', c='black', linewidth=1)
+                ax1.plot(self.times, self.volts_scaled, label='Raw', c='blue', linewidth=1)
                 ax1.plot(self.times, volts, label='Potential new linear correction, if using this dataset', c='red', linewidth=1)
-                ax1.plot(self.times, self.volts, label='Corrected, as applied', c='blue', linewidth=1)
+                ax1.plot(self.times, self.volts, label='Corrected, as applied', c='black', linewidth=1)
                 ax1.plot(self.times, volts_nl, label='Potential new exponential correction', c='cyan', linewidth=1)
                 ax1.set_xlabel('Time')
 
@@ -310,6 +338,27 @@ class CoronaBrowser(tk.Frame):
         def use_new_correction(self):
                 self.fit_exp = self.fit_exp_new
                 self.applyCorrections()
+
+
+        def saveFile(self):
+                import os
+                import csv
+                
+                name, extension = os.path.splitext(self.filename)
+                fname = name + '_adjusted.csv'
+
+                # Get the number of lines in the file so we can do a perfect progress bar...
+                print(f'----- Saving {fname} -----')
+
+                if self.temperature_present:
+                        self.datathing = zip(self.times, self.volts.transpose().tolist()[0], self.temps.transpose().tolist()[0])
+                else:
+                        self.datathing = zip(self.times, self.volts.transpose().tolist()[0])
+
+                with open(fname, 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerows(self.datathing)
+                print('                  ...done.')
 
                 
         # Faster loading. Note that Python grows lists sensibly, so
@@ -418,6 +467,11 @@ class CoronaBrowser(tk.Frame):
 
 
         def find_events(self, times, volts):
+                events = Events()
+                # Temperature data mean we're using the atmospheric voltage monitor. Don't hilight events.
+                if self.temperature_present:
+                        return events
+                
                 try:
                         self.eventThreshold['volts'] = float(self.detectionVoltageBox.get())
                 except:
@@ -438,7 +492,6 @@ class CoronaBrowser(tk.Frame):
 
                 self.waitbar_start('Looking for events...', len(times))
 
-                events = Events()
                 thresholdCounter = 0
                 aboveThresholdStart = 0
 
@@ -472,7 +525,7 @@ class CoronaBrowser(tk.Frame):
                         fig.clf()
                         ax1 = fig.gca()
                         
-                        color = 'blue'
+                        color = 'black'
                         ax1.set_xlabel('Time')
                         ax1.set_ylabel('Potential (V)', color=color)
                         ax1.plot(times, volts, color=color, label='Potential', linewidth=1)
@@ -486,6 +539,7 @@ class CoronaBrowser(tk.Frame):
                         ax2.tick_params(axis='y', labelcolor=color)
                         
                         for i in range(len(events.start_indices)):
+                                # No longer used; may be back eventually...
                                 if i == 0:
                                         ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
@@ -501,7 +555,7 @@ class CoronaBrowser(tk.Frame):
                         plt.figure(1, figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
                         plt.clf()
 
-                        plt.plot(times, volts, label='Potential', c='blue', linewidth=1)
+                        plt.plot(times, volts, label='Potential', c='black', linewidth=1)
                         for i in range(len(events.start_indices)):
                                 if i == 0:
                                         plt.plot(times[events.start_indices[i]:events.end_indices[i]],
