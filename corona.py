@@ -352,16 +352,22 @@ class CoronaBrowser(tk.Frame):
 
                 if self.temperature_present:
                         self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0], self.temps.transpose().tolist()[0])
+                        with open(fname, 'w', newline='') as f:
+                                print('Header lines, 4', file = f);
+                                print(f'Columns, datetime, original potential (V), potential after processing (V), temperature (C)', file = f)
+                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
+                                print(f"Exponential temperature fit parameters (v' = v - a*exp(bT)+c + |v|), {str(self.fit_exp)[1:-1]}", file = f)
+                                writer = csv.writer(f)
+                                writer.writerows(self.datathing)
                 else:
                         self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0])
+                        with open(fname, 'w', newline='') as f:
+                                print('Header lines, 3', file = f);
+                                print(f'Columns, datetime, original potential (V), potential after processing (V)', file = f)
+                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
+                                writer = csv.writer(f)
+                                writer.writerows(self.datathing)
 
-                with open(fname, 'w', newline='') as f:
-                        print('Header lines, 4', file = f);
-                        print(f'Columns, datetime, original potential (V), potential after processing (V), temperature (C)', file = f)
-                        print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
-                        print(f'Exponential temperature fit parameters, {str(self.fit_exp)[1:-1]}', file = f)
-                        writer = csv.writer(f)
-                        writer.writerows(self.datathing)
                 print('                  ...done.')
 
                 
