@@ -6,6 +6,7 @@ matplotlib.use("TkAgg")
 matplotlib.interactive(True)
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas
 from numpy import mat # matrix
 from numpy.linalg import inv
 import math
@@ -229,7 +230,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                self.temperature_show_old_and_new_corrections()
+                # self.temperature_show_old_and_new_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -531,7 +532,7 @@ class CoronaBrowser(tk.Frame):
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
 
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
-                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                         fig.clf()
                         ax1 = fig.gca()
                         
@@ -539,7 +540,10 @@ class CoronaBrowser(tk.Frame):
                         ax1.set_xlabel('Time')
                         ax1.set_ylabel('Potential (V)', color=color)
                         ax1.plot(times, volts, color=color, label='Potential', linewidth=1)
+                        ax1.xaxis.set_major_locator(matplotlib.dates.HourLocator())
                         ax1.tick_params(axis='y', labelcolor=color)
+                        #ax1.grid(True, which='major',axis ='x', linewidth='1', color='green')
+
 
                         ax2 = ax1.twinx()
 
@@ -562,10 +566,14 @@ class CoronaBrowser(tk.Frame):
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
-                        plt.figure(1, figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
-                        plt.clf()
+                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
+                        fig.clf()
 
-                        plt.plot(times, volts, label='Potential', c='black', linewidth=1)
+                        ax = fig.gca()
+
+                        ax.plot(times, volts, label='Potential', c='black', linewidth=0.5)
+
+                        
                         for i in range(len(events.start_indices)):
                                 if i == 0:
                                         plt.plot(times[events.start_indices[i]:events.end_indices[i]],
@@ -580,6 +588,15 @@ class CoronaBrowser(tk.Frame):
                         plt.xlabel('Time')
                         plt.ylabel('Potential (V)')
                         plt.legend()
+                
+                # Ted wants lines at midnight. Can't easily do that using matplotlib, so do it manually
+                dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
+                vr = ax.get_ylim()
+                for i in range(len(dr)):
+                        plt.plot([dr[i], dr[i]], vr, color='blue')
+                ax.set_ylim(vr)
+
+                
                 plt.title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
