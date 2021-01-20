@@ -230,7 +230,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                # self.temperature_show_old_and_new_corrections()
+                self.temperature_show_old_and_new_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -534,18 +534,15 @@ class CoronaBrowser(tk.Frame):
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
                         fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                         fig.clf()
-                        ax1 = fig.gca()
+                        ax = fig.gca()
                         
                         color = 'black'
-                        ax1.set_xlabel('Time')
-                        ax1.set_ylabel('Potential (V)', color=color)
-                        ax1.plot(times, volts, color=color, label='Potential', linewidth=1)
-                        ax1.xaxis.set_major_locator(matplotlib.dates.HourLocator())
-                        ax1.tick_params(axis='y', labelcolor=color)
-                        #ax1.grid(True, which='major',axis ='x', linewidth='1', color='green')
+                        ax.set_xlabel('Time')
+                        ax.set_ylabel('Potential (V)', color=color)
+                        ax.plot(times, volts, color=color, label='Potential', linewidth=1)
+                        ax.tick_params(axis='y', labelcolor=color)
 
-
-                        ax2 = ax1.twinx()
+                        ax2 = ax.twinx()
 
                         color = 'tab:green'
                         ax2.set_ylabel('Temperature (°C)', color=color)
@@ -555,11 +552,11 @@ class CoronaBrowser(tk.Frame):
                         for i in range(len(events.start_indices)):
                                 # No longer used; may be back eventually...
                                 if i == 0:
-                                        ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                        ax.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
                                                  c='red', linewidth=3, label='event?')
                                 else:
-                                        ax1.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                        ax.plot(times[events.start_indices[i]:events.end_indices[i]],
                                                  volts[events.start_indices[i]:events.end_indices[i]],
                                                  c='red', linewidth=3)
 
@@ -593,7 +590,7 @@ class CoronaBrowser(tk.Frame):
                 dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
                 vr = ax.get_ylim()
                 for i in range(len(dr)):
-                        plt.plot([dr[i], dr[i]], vr, color='blue')
+                        ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.3)
                 ax.set_ylim(vr)
 
                 
