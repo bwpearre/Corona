@@ -9,12 +9,15 @@ import numpy as np
 import pandas
 from numpy import mat # matrix
 from numpy.linalg import inv
+from scipy import signal
+from scipy.fft import fftshift
 import math
 import time
 import pdb
 from scipy.optimize import curve_fit
 import traceback, sys, code
 import scipy.stats
+from scipy.fft import fft
 
 # 20311011 is good
 
@@ -239,10 +242,7 @@ class CoronaBrowser(tk.Frame):
                         return self.volts_scaled
 
                 length = len(self.temps)
-                #x = np.mat(self.temps).reshape((length,1))
-                #x = np.hstack((x, np.ones((length, 1))))
-                y = np.mat(self.volts_scaled).reshape((length,1))
-                #volts = (y - x * self.fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
+                y = self.volts_scaled
                 volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
                 return volts
 
@@ -472,6 +472,7 @@ class CoronaBrowser(tk.Frame):
                     self.useNewRegressionButton.grid(row=3, column=5)
                     self.useNewRegressionButton['state'] = 'disabled'
             times = times[0:length]
+            #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length, 1))
 
             return times, volts, temps
@@ -531,11 +532,13 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
 
+                fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
+                fig.clf()
+                plt.subplot(3, 1, (1, 2))
+                ax = fig.gca()
+
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
-                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
-                        fig.clf()
-                        ax = fig.gca()
-                        
+
                         color = 'black'
                         ax.set_xlabel('Time')
                         ax.set_ylabel('Potential (V)', color=color)
@@ -563,11 +566,6 @@ class CoronaBrowser(tk.Frame):
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
-                        fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.9, self.screendims_inches[1]*0.4))
-                        fig.clf()
-
-                        ax = fig.gca()
-
                         ax.plot(times, volts, label='Potential', c='black', linewidth=0.5)
 
                         
@@ -590,11 +588,21 @@ class CoronaBrowser(tk.Frame):
                 dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
                 vr = ax.get_ylim()
                 for i in range(len(dr)):
-                        ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.3)
+                        ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
+                ax3 = plt.subplot(3, 1, 3)
                 
-                plt.title(self.filename)
+                #ax3.specgram(x=volts.flatten())
+
+                f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=64, window=signal.windows.tukey(128), mode='magnitude')
+                print('Spectrogram done. Plotting now.')
+                ax3.pcolormesh(t, f, Sxx, cmap='Greys')
+                ax3.set_ylabel('Frequency [Hz]')
+                ax3.set_xlabel('Time [sec]')
+
+                
+                ax.set_title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
