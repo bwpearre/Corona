@@ -415,10 +415,10 @@ class CoronaBrowser(tk.Frame):
                                                 # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
                                                 self.temperature_present = column
                                                 if "°F" in row[column]:
-                                                       temperature_in_freedom_units = True
-                                                       print(f'      Temperature (°F) found in column {column}.')
+                                                        temperature_in_freedom_units = True
+                                                        print(f'      Temperature (°F) found in column {column}.')
                                                 else:
-                                                       print(f'      Temperature (°C) found in column {column}.')
+                                                        print(f'      Temperature (°C) found in column {column}.')
                                         if row[column][0:4].lower() == 'volt':
                                                 voltage_column = column
                                                 print(f'      Voltage found in column {column}.')
@@ -489,7 +489,6 @@ class CoronaBrowser(tk.Frame):
                 except:
                         print(f'Could not convert voltage "{self.detectionVoltageBox.get()}" to number. Resetting to default.')
                         self.eventThreshold['volts'] = 0.02
-                
                         
                 try:
                         self.eventThreshold['count'] = int(float(self.detectionCountBox.get()))
@@ -525,7 +524,6 @@ class CoronaBrowser(tk.Frame):
                                                 #print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
                                                 events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
                                 thresholdCounter = 0;
-                        
                 self.waitbar_done()
                 return events
 
@@ -556,12 +554,12 @@ class CoronaBrowser(tk.Frame):
                                 # No longer used; may be back eventually...
                                 if i == 0:
                                         ax.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                 volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=3, label='event?')
+                                                volts[events.start_indices[i]:events.end_indices[i]],
+                                                c='red', linewidth=3, label='event?')
                                 else:
                                         ax.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                 volts[events.start_indices[i]:events.end_indices[i]],
-                                                 c='red', linewidth=3)
+                                                volts[events.start_indices[i]:events.end_indices[i]],
+                                                c='red', linewidth=3)
 
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
@@ -591,15 +589,22 @@ class CoronaBrowser(tk.Frame):
                         ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
-                ax3 = plt.subplot(3, 1, 3)
+                ax3 = plt.subplot(3, 1, 3, sharex = ax)
                 
                 #ax3.specgram(x=volts.flatten())
 
-                f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=64, window=signal.windows.tukey(128), mode='magnitude')
-                print('Spectrogram done. Plotting now.')
-                ax3.pcolormesh(t, f, Sxx, cmap='Greys')
+                winlen = 128
+                noverlap = int(winlen / 2)
+                spectimes = times[noverlap::noverlap]
+                f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=noverlap, window=signal.windows.tukey(winlen), mode='magnitude')
+                spectimes = spectimes[0:Sxx.shape[1]]
+
+                # Scale the spectrogram data for better visibility
+                #Sxx = np.log(Sxx)
+                Sxx = np.sqrt(Sxx)
+
+                ax3.pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
                 ax3.set_ylabel('Frequency [Hz]')
-                ax3.set_xlabel('Time [sec]')
 
                 
                 ax.set_title(self.filename)
