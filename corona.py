@@ -578,7 +578,6 @@ class CoronaBrowser(tk.Frame):
                                                  c='red', linewidth=3)
                                 #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
                                 #            s=events.sizes, c='red', label='Event?')
-                        plt.xlabel('Time')
                         plt.ylabel('Potential (V)')
                         plt.legend()
                 
@@ -605,6 +604,7 @@ class CoronaBrowser(tk.Frame):
 
                 ax3.pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
                 ax3.set_ylabel('Frequency [Hz]')
+                ax3.set_xlabel('Time')
 
                 
                 ax.set_title(self.filename)
