@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import tkinter as tk
 from tkinter import filedialog, ttk, END, BooleanVar
 import matplotlib
@@ -18,6 +18,8 @@ from scipy.optimize import curve_fit
 import traceback, sys, code
 import scipy.stats
 from scipy.fft import fft
+import csv
+
 
 # 20311011 is good
 
@@ -233,7 +235,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                self.temperature_show_old_and_new_corrections()
+                #self.temperature_show_old_and_new_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -343,7 +345,6 @@ class CoronaBrowser(tk.Frame):
 
         def saveFile(self):
                 import os
-                import csv
                 
                 name, extension = os.path.splitext(self.filename)
                 fname = name + '_adjusted.csv'
@@ -376,8 +377,6 @@ class CoronaBrowser(tk.Frame):
         # repeated calls to append() aren't as inefficient as they
         # look.
         def loadFileBen(self, fname):
-            import csv
-
             times = []
             volts = []
             temps = []
@@ -447,7 +446,7 @@ class CoronaBrowser(tk.Frame):
                                     print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
-                                            times.append(datetime.datetime.strptime(row[date_column], self.date_format))
+                                            times.append(dt.datetime.strptime(row[date_column], self.date_format))
                                     except ValueError:
                                             print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
                                             continue;
@@ -475,9 +474,55 @@ class CoronaBrowser(tk.Frame):
             #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length, 1))
 
+            # See if we can find some WHOI data...
+            print(type(times[0]))
+            self.loadWHOI(times)
+
             return times, volts, temps
 
 
+        def loadWHOI(self, times):
+                import os
+                duration = times[-1]-times[0]
+                print(type(duration))
+
+                zwindind = []
+
+                week_i = 0
+                while times[0] + dt.timedelta(weeks=week_i) <= times[-1]:
+                        fname = f'data/whoi/lidar/asit.lidar.{(times[0]+dt.timedelta(weeks=week_i)).strftime("%Y_0%U")}.sta'
+                        print(f'Loading {fname}')
+                        week_i += 1
+
+                        # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
+                        if os.path.exists(fname):
+                                with open(fname, errors='replace') as f:
+                                        line_count = 0
+                                        for row in f:
+                                                line_count += 1
+                                                if line_count == 1:
+                                                        if row[0:9] == 'HeaderSize'[0:9]:
+                                                                headersize = int(row.split('=')[1])+1
+                                                                print(f'Header is {headersize} lines')
+                                                        else:
+                                                                print('Could not get header size. Skipping.')
+                                                                break
+
+                                                if line_count == headersize + 1:
+                                                        names = row.split('\t')
+                                                        for i in range(len(names)):
+                                                                if "Z-wind (m/s)" in names[i]:
+                                                                        zwindind.append(i)
+                                                        for i in zwindind:
+                                                                print(names[i], end=",");
+                                                        print('');
+                                                if line_count >= headersize+2 and line_count < headersize + 4:
+                                                        print(row.split('\t'))
+                                                
+                        else:
+                                print(f'File "{fname}" does not exist.')
+
+    
         def find_events(self, times, volts):
                 events = Events()
                 # Temperature data mean we're using the atmospheric voltage monitor. Don't hilight events.
