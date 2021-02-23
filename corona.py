@@ -19,6 +19,7 @@ import traceback, sys, code
 import scipy.stats
 from scipy.fft import fft
 import csv
+import os
 
 
 # 20311011 is good
@@ -50,6 +51,7 @@ class CoronaBrowser(tk.Frame):
 
                 # Define the weird date format
                 self.date_format = '%m/%d/%y %I:%M:%S %p'
+                self.date_format_lidar = '%Y/%m/%d %H:%M'
                 
                 # Helper vars:
                 self.plotTemperatureWithPotential = BooleanVar()
@@ -344,8 +346,6 @@ class CoronaBrowser(tk.Frame):
 
 
         def saveFile(self):
-                import os
-                
                 name, extension = os.path.splitext(self.filename)
                 fname = name + '_adjusted.csv'
 
@@ -395,6 +395,9 @@ class CoronaBrowser(tk.Frame):
             scaled_column = -1
             temperature_in_freedom_units = False
 
+            DEBUG_TZ_FAKE = dt.timedelta(days=-30)
+            print('************************************************* WARNING ******************* debugging still in progress ******************* DEBUG_TZ_FAKE ***************************************************************************')
+
             with open(fname) as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
@@ -410,6 +413,13 @@ class CoronaBrowser(tk.Frame):
                                         if row[column][0:4].lower() == "date":
                                                 print(f'      Date found in column {column}.')
                                                 date_column = column
+                                                utco = (row[column].split('GMT')[1]).split(':')
+                                                # Lots of stupid complexity here just in case we're in Newfoundland!
+                                                timedelta_corona = dt.timedelta(hours=abs(int(utco[0])), minutes=int(utco[1]))
+                                                if np.sign(int(utco[0])) == -1:
+                                                        timedelta_corona = -timedelta_corona
+                                                self.timezone_corona = dt.timezone(timedelta_corona)
+                                                print(f'            Timezone is {self.timezone_corona}')
                                         if row[column][0:4].lower() == "temp":
                                                 # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
                                                 self.temperature_present = column
@@ -446,7 +456,9 @@ class CoronaBrowser(tk.Frame):
                                     print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
-                                            times.append(dt.datetime.strptime(row[date_column], self.date_format))
+                                            t = dt.datetime.strptime(row[date_column], self.date_format)
+                                            t = t + DEBUG_TZ_FAKE
+                                            t = times.append(t.replace(tzinfo=self.timezone_corona))
                                     except ValueError:
                                             print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
                                             continue;
@@ -475,27 +487,33 @@ class CoronaBrowser(tk.Frame):
             volts = np.array(volts[0:length]).reshape((length, 1))
 
             # See if we can find some WHOI data...
-            print(type(times[0]))
             self.loadWHOI(times)
 
             return times, volts, temps
 
 
         def loadWHOI(self, times):
-                import os
-                duration = times[-1]-times[0]
-                print(type(duration))
+                day_i = -1
 
-                zwindind = []
+                print(f'Start time is {times[0]}, which is file {times[0].strftime("%Y_%j")}. Last year,day is {times[-1].strftime("%Y_%j")}')
+                fname = ''
+                lastfname = f'data/whoi/lidar/asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
 
-                week_i = 0
-                while times[0] + dt.timedelta(weeks=week_i) <= times[-1]:
-                        fname = f'data/whoi/lidar/asit.lidar.{(times[0]+dt.timedelta(weeks=week_i)).strftime("%Y_0%U")}.sta'
+                self.times_lidar = []
+                
+                while fname != lastfname:
+                        day_i += 1
+                        fname = f'data/whoi/lidar/asit.lidar.{(times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")}.sta'
                         print(f'Loading {fname}')
-                        week_i += 1
+
+                        zwindind = []
+                        zwindz = []
+                        zv = []
 
                         # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
                         if os.path.exists(fname):
+                                num_lines = sum(1 for line in open(fname, errors='replace'))
+
                                 with open(fname, errors='replace') as f:
                                         line_count = 0
                                         for row in f:
@@ -503,7 +521,6 @@ class CoronaBrowser(tk.Frame):
                                                 if line_count == 1:
                                                         if row[0:9] == 'HeaderSize'[0:9]:
                                                                 headersize = int(row.split('=')[1])+1
-                                                                print(f'Header is {headersize} lines')
                                                         else:
                                                                 print('Could not get header size. Skipping.')
                                                                 break
@@ -513,14 +530,37 @@ class CoronaBrowser(tk.Frame):
                                                         for i in range(len(names)):
                                                                 if "Z-wind (m/s)" in names[i]:
                                                                         zwindind.append(i)
-                                                        for i in zwindind:
-                                                                print(names[i], end=",");
-                                                        print('');
-                                                if line_count >= headersize+2 and line_count < headersize + 4:
-                                                        print(row.split('\t'))
-                                                
+                                                                        zwindz.append(int(names[i].split('m', 1)[0]))
+                                                        print(zwindz)
+                                                        zv = np.ndarray((num_lines - headersize - 1, len(zwindz)))
+                                                        
+                                                if line_count >= headersize + 2:
+                                                        row = row.split('\t')
+                                                        try:
+                                                                self.times_lidar.append(dt.datetime.strptime(row[0], self.date_format_lidar))
+                                                        except ValueError:
+                                                                print(f'Line {line_count}: could not parse date string "{row[0]}" with expected format "{self.date_format_lidar}".')
+                                                                continue;
+                                                        for i in range(len(zwindind)):
+                                                                zv[line_count - headersize - 2, i] = float(row[zwindind[i]])
+                                                        #if line_count < headersize + 4:
+                                                        #        print('self.times_lidar[-1]')
                         else:
                                 print(f'File "{fname}" does not exist.')
+
+                        # If this is not our first time, concatenate
+                        # the data arrays. This is more efficient than
+                        # doing it inline above as I do with
+                        # times_lidar
+                        if hasattr(self, 'zv'):
+                                if self.zwind_heights != zwindz:
+                                        raise Exception('Incompatibility', f'File {fname}: change in z-wind heights; probable data incompatibility')
+                                        break
+                                self.zv = np.concatenate((self.zv, zv), axis=0)
+                        else:
+                                self.zwind_names = names
+                                self.zwind_heights = zwindz
+                                self.zv = zv
 
     
         def find_events(self, times, volts):
@@ -624,6 +664,12 @@ class CoronaBrowser(tk.Frame):
                                 #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
                                 #            s=events.sizes, c='red', label='Event?')
                         plt.ylabel('Potential (V)')
+
+                        ax2 = ax.twinx()
+                        ax2.set_ylabel('Vertical wind (m/s)')
+                        ax2.plot(self.times_lidar, self.zv)
+                        ax2.set_xlim(self.times[0], self.times[-1])
+                        
                         plt.legend()
                 
                 # Ted wants lines at midnight. Can't easily do that using matplotlib, so do it manually
