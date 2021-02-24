@@ -116,7 +116,7 @@ class CoronaBrowser(tk.Frame):
                 self.rmplButton.grid(row=row, column=0)
                 self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
-                self.regressButton = tk.Button(self, text='Plot potential vs temp', command=self.temperature_show_old_and_new_corrections)
+                self.regressButton = tk.Button(self, text='Plot potential vs temp', command=self.plot_temperature_corrections)
                 self.useNewRegressionButton = tk.Button(self, text='Use new regression this session', command=self.use_new_correction)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
@@ -237,7 +237,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                #self.temperature_show_old_and_new_corrections()
+                self.plot_temperature_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -251,7 +251,7 @@ class CoronaBrowser(tk.Frame):
                 return volts
 
         # Show default and new regressions from voltage-vs-temperature
-        def temperature_show_old_and_new_corrections(self):
+        def plot_temperature_corrections(self):
                 if not self.temperature_present:
                         plt.close(2)
                         return
@@ -395,9 +395,6 @@ class CoronaBrowser(tk.Frame):
             scaled_column = -1
             temperature_in_freedom_units = False
 
-            DEBUG_TZ_FAKE = dt.timedelta(days=-30)
-            print('************************************************* WARNING ******************* debugging still in progress ******************* DEBUG_TZ_FAKE ***************************************************************************')
-
             with open(fname) as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
@@ -457,7 +454,6 @@ class CoronaBrowser(tk.Frame):
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
                                             t = dt.datetime.strptime(row[date_column], self.date_format)
-                                            t = t + DEBUG_TZ_FAKE
                                             t = times.append(t.replace(tzinfo=self.timezone_corona))
                                     except ValueError:
                                             print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
@@ -500,6 +496,7 @@ class CoronaBrowser(tk.Frame):
                 lastfname = f'data/whoi/lidar/asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
 
                 self.times_lidar = []
+                self.zv = []
                 
                 while fname != lastfname:
                         day_i += 1
@@ -508,6 +505,7 @@ class CoronaBrowser(tk.Frame):
 
                         zwindind = []
                         zwindz = []
+                        zwind_legend = []
                         zv = []
 
                         # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
@@ -530,8 +528,8 @@ class CoronaBrowser(tk.Frame):
                                                         for i in range(len(names)):
                                                                 if "Z-wind (m/s)" in names[i]:
                                                                         zwindind.append(i)
+                                                                        zwind_legend.append(names[i])
                                                                         zwindz.append(int(names[i].split('m', 1)[0]))
-                                                        print(zwindz)
                                                         zv = np.ndarray((num_lines - headersize - 1, len(zwindz)))
                                                         
                                                 if line_count >= headersize + 2:
@@ -545,22 +543,28 @@ class CoronaBrowser(tk.Frame):
                                                                 zv[line_count - headersize - 2, i] = float(row[zwindind[i]])
                                                         #if line_count < headersize + 4:
                                                         #        print('self.times_lidar[-1]')
+
+                                        # If this is not our first time, concatenate
+                                        # the data arrays. This is more efficient than
+                                        # doing it inline above as I do with
+                                        # times_lidar
+                                        if hasattr(self, 'zv') and self.zv:
+                                                if self.zwind_z != zwindz:
+                                                        print(zwindz)
+                                                        print(self.zwind_z)
+                                                        raise Exception('Incompatibility', f'File {fname}: change in z-wind heights; probable data incompatibility')
+                                                        break
+                                                self.zv = np.concatenate((self.zv, zv), axis=0)
+                                        else:
+                                                self.zwind_legend = zwind_legend
+                                                self.zwind_z = zwindz
+                                                self.zv = zv
+
+                                print(f'Loaded. Sizes are {len(self.times_lidar)} x {len(self.zwind_z)}; data size is {self.zv.shape}')
                         else:
                                 print(f'File "{fname}" does not exist.')
 
-                        # If this is not our first time, concatenate
-                        # the data arrays. This is more efficient than
-                        # doing it inline above as I do with
-                        # times_lidar
-                        if hasattr(self, 'zv'):
-                                if self.zwind_heights != zwindz:
-                                        raise Exception('Incompatibility', f'File {fname}: change in z-wind heights; probable data incompatibility')
-                                        break
-                                self.zv = np.concatenate((self.zv, zv), axis=0)
-                        else:
-                                self.zwind_names = names
-                                self.zwind_heights = zwindz
-                                self.zv = zv
+
 
     
         def find_events(self, times, volts):
@@ -617,7 +621,11 @@ class CoronaBrowser(tk.Frame):
 
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 fig.clf()
-                plt.subplot(3, 1, (1, 2))
+
+                if hasattr(self, 'zv') and self.zv:
+                        plt.subplot(4, 1, (1, 2))
+                else:
+                        plt.subplot(3, 1, (1, 2))
                 ax = fig.gca()
 
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
@@ -665,13 +673,8 @@ class CoronaBrowser(tk.Frame):
                                 #            s=events.sizes, c='red', label='Event?')
                         plt.ylabel('Potential (V)')
 
-                        ax2 = ax.twinx()
-                        ax2.set_ylabel('Vertical wind (m/s)')
-                        ax2.plot(self.times_lidar, self.zv)
-                        ax2.set_xlim(self.times[0], self.times[-1])
-                        
-                        plt.legend()
-                
+
+
                 # Ted wants lines at midnight. Can't easily do that using matplotlib, so do it manually
                 dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
                 vr = ax.get_ylim()
@@ -679,10 +682,11 @@ class CoronaBrowser(tk.Frame):
                         ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
-                ax3 = plt.subplot(3, 1, 3, sharex = ax)
+                if hasattr(self, 'zv') and self.zv:
+                        ax3 = plt.subplot(4, 1, 3, sharex = ax)
+                else:
+                        ax3 = plt.subplot(3, 1, 3, sharex = ax)
                 
-                #ax3.specgram(x=volts.flatten())
-
                 winlen = 128
                 noverlap = int(winlen / 2)
                 spectimes = times[noverlap::noverlap]
@@ -697,6 +701,24 @@ class CoronaBrowser(tk.Frame):
                 ax3.set_ylabel('Frequency [Hz]')
                 ax3.set_xlabel('Time')
 
+                # And wind z velocities, if available...
+                if hasattr(self, 'zv') and self.zv:
+                        ax4 = plt.subplot(4, 1, 4, sharex = ax)
+                        ax4.set_ylabel('Vertical wind (m/s)')
+
+                        z = ((l - self.zwind_z[0]) / (self.zwind_z[-1]-self.zwind_z[0]) for l in self.zwind_z)
+                        zz = np.fromiter(z, dtype=float)
+                        colours = plt.get_cmap('plasma')(X=zz)
+                        for i in range(len(self.zwind_z)-1, -1, -1):
+                                ax4.plot(self.times_lidar, self.zv[:,i] + 0.005*self.zwind_z[i],
+                                         label=self.zwind_legend[i], color=colours[i])
+                                #handles, labels = ax4.get_legend_handles_labels()
+                        ax4.legend()
+                        #zmesh = ax4.pcolormesh(*np.meshgrid(self.times_lidar, self.zwind_z), self.zv.T, shading='gouraud', cmap='BrBG')
+                        #fig.colorbar(zmesh)
+                        
+                        ax4.set_xlim(self.times[0], self.times[-1])
+                
                 
                 ax.set_title(self.filename)
                 plt.get_current_fig_manager().toolbar.zoom()
