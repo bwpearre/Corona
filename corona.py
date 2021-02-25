@@ -19,7 +19,7 @@ import traceback, sys, code
 import scipy.stats
 from scipy.fft import fft
 import csv
-import os
+from pathlib import Path
 
 
 # 20311011 is good
@@ -189,8 +189,7 @@ class CoronaBrowser(tk.Frame):
                 if data_filename:
                         self.regressButton.grid_forget()
                         self.useNewRegressionButton.grid_forget()
-                        self.times, self.volts_raw, self.temps = self.loadFileBen(data_filename)
-                        self.filename = data_filename 
+                        self.times, self.volts_raw, self.temps = self.loadFileBen(Path(data_filename))
                         self.rmplButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
                         if self.temperature_present:
@@ -303,7 +302,7 @@ class CoronaBrowser(tk.Frame):
                 sampleY_old_exp = exponential(sampleX_nl, *self.fit_exp)
 
                 self.waitbar_indeterminate_start('Plotting regressions...')
-                plt.figure(2, figsize=(self.screendims_inches[0]*0.95, self.screendims_inches[1]*0.5))
+                plt.figure(2, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 plt.clf();
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
@@ -334,7 +333,7 @@ class CoronaBrowser(tk.Frame):
                 
                 ax1.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
-                plt.title(self.filename)
+                plt.title(self.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
                 self.waitbar_indeterminate_done();
@@ -346,8 +345,8 @@ class CoronaBrowser(tk.Frame):
 
 
         def saveFile(self):
-                name, extension = os.path.splitext(self.filename)
-                fname = name + '_adjusted.csv'
+                fname = self.datafile.parent / f'{self.datafile.stem}_adjusted.csv'
+                print('fname will be "{fname}"')
 
                 # Get the number of lines in the file so we can do a perfect progress bar...
                 print(f'----- Saving {fname} -----')
@@ -381,6 +380,7 @@ class CoronaBrowser(tk.Frame):
             volts = []
             temps = []
 
+            self.datafile = fname
 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
@@ -395,7 +395,7 @@ class CoronaBrowser(tk.Frame):
             scaled_column = -1
             temperature_in_freedom_units = False
 
-            with open(fname) as csv_file:
+            with fname.open() as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
                 for row in csv_reader:
@@ -493,14 +493,16 @@ class CoronaBrowser(tk.Frame):
 
                 print(f'Start time is {times[0]}, which is file {times[0].strftime("%Y_%j")}. Last year,day is {times[-1].strftime("%Y_%j")}')
                 fname = ''
-                lastfname = f'data/whoi/lidar/asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
+                lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
 
                 self.times_lidar = []
-                self.zv = []
+                self.zv = np.ndarray((0,0))
+                errors = 0
                 
                 while fname != lastfname:
                         day_i += 1
-                        fname = f'data/whoi/lidar/asit.lidar.{(times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")}.sta'
+
+                        fname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{(times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")}.sta'
                         print(f'Loading {fname}')
 
                         zwindind = []
@@ -509,7 +511,7 @@ class CoronaBrowser(tk.Frame):
                         zv = []
 
                         # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
-                        if os.path.exists(fname):
+                        if fname.is_file():
                                 num_lines = sum(1 for line in open(fname, errors='replace'))
 
                                 with open(fname, errors='replace') as f:
@@ -548,7 +550,7 @@ class CoronaBrowser(tk.Frame):
                                         # the data arrays. This is more efficient than
                                         # doing it inline above as I do with
                                         # times_lidar
-                                        if hasattr(self, 'zv') and self.zv:
+                                        if hasattr(self, 'zv') and self.zv.size:
                                                 if self.zwind_z != zwindz:
                                                         print(zwindz)
                                                         print(self.zwind_z)
@@ -560,9 +562,13 @@ class CoronaBrowser(tk.Frame):
                                                 self.zwind_z = zwindz
                                                 self.zv = zv
 
-                                print(f'Loaded. Sizes are {len(self.times_lidar)} x {len(self.zwind_z)}; data size is {self.zv.shape}')
+                                # print(f'Loaded. Sizes are {len(self.times_lidar)} x {len(self.zwind_z)}; data size is {self.zv.shape}')
                         else:
                                 print(f'File "{fname}" does not exist.')
+                                errors += 1
+                                if errors >= 3:
+                                        print('Not finding WHOI data files. Giving up.')
+                                        break
 
 
 
@@ -622,7 +628,7 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 fig.clf()
 
-                if hasattr(self, 'zv') and self.zv:
+                if hasattr(self, 'zv') and self.zv.size:
                         plt.subplot(4, 1, (1, 2))
                 else:
                         plt.subplot(3, 1, (1, 2))
@@ -682,7 +688,7 @@ class CoronaBrowser(tk.Frame):
                         ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
-                if hasattr(self, 'zv') and self.zv:
+                if hasattr(self, 'zv') and self.zv.size:
                         ax3 = plt.subplot(4, 1, 3, sharex = ax)
                 else:
                         ax3 = plt.subplot(3, 1, 3, sharex = ax)
@@ -702,13 +708,13 @@ class CoronaBrowser(tk.Frame):
                 ax3.set_xlabel('Time')
 
                 # And wind z velocities, if available...
-                if hasattr(self, 'zv') and self.zv:
+                if hasattr(self, 'zv') and self.zv.size:
                         ax4 = plt.subplot(4, 1, 4, sharex = ax)
                         ax4.set_ylabel('Vertical wind (m/s)')
 
                         z = ((l - self.zwind_z[0]) / (self.zwind_z[-1]-self.zwind_z[0]) for l in self.zwind_z)
                         zz = np.fromiter(z, dtype=float)
-                        colours = plt.get_cmap('plasma')(X=zz)
+                        colours = plt.get_cmap('viridis')(X=zz)
                         for i in range(len(self.zwind_z)-1, -1, -1):
                                 ax4.plot(self.times_lidar, self.zv[:,i] + 0.005*self.zwind_z[i],
                                          label=self.zwind_legend[i], color=colours[i])
@@ -720,7 +726,7 @@ class CoronaBrowser(tk.Frame):
                         ax4.set_xlim(self.times[0], self.times[-1])
                 
                 
-                ax.set_title(self.filename)
+                ax.set_title(self.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
