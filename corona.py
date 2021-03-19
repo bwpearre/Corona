@@ -20,6 +20,8 @@ import scipy.stats
 from scipy.fft import fft
 import csv
 from pathlib import Path
+import re
+import warnings
 
 
 # 20311011 is good
@@ -63,9 +65,16 @@ class CoronaBrowser(tk.Frame):
                 # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
                 self.fit = mat([[-0.020992708021557917],
                                [5.272377975649473]])
+                
+                # Dictionary is exponential fit params indexed on sensor serial number:
+                self.fits = {-1: (1.713, -0.07977, 4.493),
+                             20121725: (1.3545883156167038, -0.0714642458651333, 4.482818353894192),
+                             20310992: (0.28929039047675625, -0.08857734679045634, 4.447723485085831)}
+                        
                 # Exponential temperature fit parameters computed from 20121725_1.csv
-                self.fit_exp = (1.7137714544047866, -0.07977523230422238, 4.493155756244882)
 
+                self.no_temperature_correction_check = True
+                
 
         def event_detection_enabled(self, state):
                 if state:
@@ -187,6 +196,9 @@ class CoronaBrowser(tk.Frame):
         def loadFile(self):
                 data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if data_filename:
+                        # Reset stuff
+                        self.sensor_serial_number = -1
+                        
                         self.regressButton.grid_forget()
                         self.useNewRegressionButton.grid_forget()
                         self.times, self.volts_raw, self.temps = self.loadFileBen(Path(data_filename))
@@ -236,7 +248,8 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                self.plot_temperature_corrections()
+                if self.no_temperature_correction_check == False:
+                        self.plot_temperature_corrections()
                         
 
         # Correct the voltage using self.fit for temperature
@@ -246,6 +259,14 @@ class CoronaBrowser(tk.Frame):
 
                 length = len(self.temps)
                 y = self.volts_scaled
+
+                # Seems like a good place to sort out the temperature correction:
+                if self.sensor_serial_number in self.fits:
+                        self.fit_exp = self.fits[self.sensor_serial_number]
+                else:
+                        print(f'*** UPDATE ***: No temperature calibration specifically for serial number {self.sensor_serial_number}.')
+                        self.fit_exp = self.fits[-1]
+                
                 volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
                 return volts
 
@@ -407,6 +428,15 @@ class CoronaBrowser(tk.Frame):
                         if line_count == 2:
                                 # This is the line with all the header info. Figure out what we have...
                                 for column in range(1, len(row)):
+                                        serialnumberfound = row[column].find("SEN S/N:")
+                                        if serialnumberfound != -1:
+                                                sn = int(row[column][serialnumberfound:].split(":")[1].split(',')[0])
+                                                if self.sensor_serial_number == -1:
+                                                        print(f'      Found sensor serial number {sn}')
+                                                if self.sensor_serial_number == -1 or sn == self.sensor_serial_number:
+                                                        self.sensor_serial_number = sn
+                                                else:
+                                                        raise(f"Conflicting sensor serial numbers {sn} and {self.sensor_serial_number}")
                                         if row[column][0:4].lower() == "date":
                                                 print(f'      Date found in column {column}.')
                                                 date_column = column
@@ -716,7 +746,7 @@ class CoronaBrowser(tk.Frame):
                         zz = np.fromiter(z, dtype=float)
                         colours = plt.get_cmap('viridis')(X=zz)
                         for i in range(len(self.zwind_z)-1, -1, -1):
-                                ax4.plot(self.times_lidar, self.zv[:,i] + 0.005*self.zwind_z[i],
+                                ax4.plot(self.times_lidar, self.zv[:,i] + 0.00*self.zwind_z[i],
                                          label=self.zwind_legend[i], color=colours[i])
                                 #handles, labels = ax4.get_legend_handles_labels()
                         ax4.legend()
