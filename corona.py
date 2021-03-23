@@ -22,6 +22,7 @@ import csv
 from pathlib import Path
 import re
 import warnings
+import pandas as pd
 
 
 # 20311011 is good
@@ -74,6 +75,7 @@ class CoronaBrowser(tk.Frame):
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
                 self.no_temperature_correction_check = True
+                self.whoi = False
                 
 
         def event_detection_enabled(self, state):
@@ -526,8 +528,11 @@ class CoronaBrowser(tk.Frame):
                 lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
 
                 self.times_lidar = []
-                self.zv = np.ndarray((0,0))
                 errors = 0
+                
+                dataframes = []
+                z = []
+                legend = []
                 
                 while fname != lastfname:
                         day_i += 1
@@ -535,64 +540,24 @@ class CoronaBrowser(tk.Frame):
                         fname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{(times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")}.sta'
                         print(f'Loading {fname}')
 
-                        zwindind = []
-                        zwindz = []
-                        zwind_legend = []
-                        zv = []
-
                         # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
                         if fname.is_file():
-                                num_lines = sum(1 for line in open(fname, errors='replace'))
-
                                 with open(fname, errors='replace') as f:
-                                        line_count = 0
-                                        for row in f:
-                                                line_count += 1
-                                                if line_count == 1:
-                                                        if row[0:9] == 'HeaderSize'[0:9]:
-                                                                headersize = int(row.split('=')[1])+1
-                                                        else:
-                                                                print('Could not get header size. Skipping.')
-                                                                break
-
-                                                if line_count == headersize + 1:
-                                                        names = row.split('\t')
-                                                        for i in range(len(names)):
-                                                                if "Z-wind (m/s)" in names[i]:
-                                                                        zwindind.append(i)
-                                                                        zwind_legend.append(names[i])
-                                                                        zwindz.append(int(names[i].split('m', 1)[0]))
-                                                        zv = np.ndarray((num_lines - headersize - 1, len(zwindz)))
-                                                        
-                                                if line_count >= headersize + 2:
-                                                        row = row.split('\t')
-                                                        try:
-                                                                self.times_lidar.append(dt.datetime.strptime(row[0], self.date_format_lidar))
-                                                        except ValueError:
-                                                                print(f'Line {line_count}: could not parse date string "{row[0]}" with expected format "{self.date_format_lidar}".')
-                                                                continue;
-                                                        for i in range(len(zwindind)):
-                                                                zv[line_count - headersize - 2, i] = float(row[zwindind[i]])
-                                                        #if line_count < headersize + 4:
-                                                        #        print('self.times_lidar[-1]')
-
-                                        # If this is not our first time, concatenate
-                                        # the data arrays. This is more efficient than
-                                        # doing it inline above as I do with
-                                        # times_lidar
-                                        if hasattr(self, 'zv') and self.zv.size:
-                                                if self.zwind_z != zwindz:
-                                                        print(zwindz)
-                                                        print(self.zwind_z)
-                                                        raise Exception('Incompatibility', f'File {fname}: change in z-wind heights; probable data incompatibility')
-                                                        break
-                                                self.zv = np.concatenate((self.zv, zv), axis=0)
+                                        row = f.readline()
+                                        if row[0:9] == 'HeaderSize'[0:9]:
+                                                headersize = int(row.split('=')[1])
                                         else:
-                                                self.zwind_legend = zwind_legend
-                                                self.zwind_z = zwindz
-                                                self.zv = zv
-
-                                # print(f'Loaded. Sizes are {len(self.times_lidar)} x {len(self.zwind_z)}; data size is {self.zv.shape}')
+                                                print('Could not get header size. Skipping.')
+                                                break
+                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
+                                whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                if whoi_lidar_timezone != "UTC+0":
+                                        raise Exception('LIDAR time offset changed.')
+                                
+                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
+                                dataframes.append(df)
+                                self.whoi = True
                         else:
                                 print(f'File "{fname}" does not exist.')
                                 errors += 1
@@ -600,7 +565,16 @@ class CoronaBrowser(tk.Frame):
                                         print('Not finding WHOI data files. Giving up.')
                                         break
 
-
+                self.whoi_lidar = pd.concat(dataframes)
+                #self.whoi_lidar.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi_lidar.head
+                
+                for i,t in enumerate(self.whoi_lidar.columns):
+                        if "Z-wind (m/s)" in t:
+                                legend.append(t)
+                                z.append(int(t.split('m', 1)[0]))
+                self.zwind_z = z
+                self.zwind_legend = legend
 
     
         def find_events(self, times, volts):
@@ -658,7 +632,7 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 fig.clf()
 
-                if hasattr(self, 'zv') and self.zv.size:
+                if self.whoi:
                         plt.subplot(4, 1, (1, 2))
                 else:
                         plt.subplot(3, 1, (1, 2))
@@ -718,7 +692,7 @@ class CoronaBrowser(tk.Frame):
                         ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
-                if hasattr(self, 'zv') and self.zv.size:
+                if self.whoi:
                         ax3 = plt.subplot(4, 1, 3, sharex = ax)
                 else:
                         ax3 = plt.subplot(3, 1, 3, sharex = ax)
@@ -738,17 +712,16 @@ class CoronaBrowser(tk.Frame):
                 ax3.set_xlabel('Time')
 
                 # And wind z velocities, if available...
-                if hasattr(self, 'zv') and self.zv.size:
+                if self.whoi:
                         ax4 = plt.subplot(4, 1, 4, sharex = ax)
-                        ax4.set_ylabel('Vertical wind (m/s)')
+                        ax4.set_ylabel('Updraft (m/s)')
 
                         z = ((l - self.zwind_z[0]) / (self.zwind_z[-1]-self.zwind_z[0]) for l in self.zwind_z)
                         zz = np.fromiter(z, dtype=float)
                         colours = plt.get_cmap('viridis')(X=zz)
                         for i in range(len(self.zwind_z)-1, -1, -1):
-                                ax4.plot(self.times_lidar, self.zv[:,i] + 0.00*self.zwind_z[i],
+                                ax4.plot(self.whoi_lidar.index, -self.whoi_lidar[self.zwind_legend[i]],
                                          label=self.zwind_legend[i], color=colours[i])
-                                #handles, labels = ax4.get_legend_handles_labels()
                         ax4.legend()
                         #zmesh = ax4.pcolormesh(*np.meshgrid(self.times_lidar, self.zwind_z), self.zv.T, shading='gouraud', cmap='BrBG')
                         #fig.colorbar(zmesh)
