@@ -74,9 +74,7 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.whoi = False
-
-                if False:
+                if True:
                         self.debug_seq()
 
 
@@ -153,7 +151,14 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox.insert(0, self.eventThreshold['count'])
                 self.event_detection_enabled(False)
 
+        # Reset variables that should be tossed out if a new file is loaded or etc.
+        def reset_defaults(self):
+                self.whoi_present = False
+                self.sensor_serial_number = -1
+                self.regressButton.grid_forget()
+                self.useNewRegressionButton.grid_forget()
 
+                
         # Clean up matplotlib windows etc
         def close_and_quit(self):
                 plt.close('all')
@@ -200,11 +205,6 @@ class CoronaBrowser(tk.Frame):
 
         def debug(self):
                 pdb.set_trace()
-
-        def reset_defaults(self):
-                self.sensor_serial_number = -1
-                self.regressButton.grid_forget()
-                self.useNewRegressionButton.grid_forget()
 
         # Ask for a filename, load it, plot it.
         def loadFile(self, filename=False):
@@ -578,27 +578,28 @@ class CoronaBrowser(tk.Frame):
                                                 df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
                                                 
                                         dataframes.append(df)
-                                                
-                                        self.whoi = True
 
                                 else:
                                         print(f'File "{fname}" does not exist.')
                                         errors += 1
                                         if errors >= 3:
                                                 print('Not finding WHOI data files. Giving up.')
-                                                break
+                                                return
 
-                self.whoi_lidar = pd.concat(dataframes)
-                #self.whoi_lidar.tz_localize('UTC') # See "Just check that it hasn't changed" above.
-                self.whoi_lidar.head
+                try:
+                        self.whoi = pd.concat(dataframes)
+                        self.whoi_present = True
+                        self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                        
                 
-                for i,t in enumerate(self.whoi_lidar.columns):
-                        if "Z-wind (m/s)" in t:
-                                legend.append(t)
-                                z.append(int(t.split('m', 1)[0]))
-                self.zwind_z = z
-                self.zwind_legend = legend
-
+                        for i,t in enumerate(self.whoi.columns):
+                                if "Z-wind (m/s)" in t:
+                                        legend.append(t)
+                                        z.append(int(t.split('m', 1)[0]))
+                        self.zwind_z = z
+                        self.zwind_legend = legend
+                except:
+                        return
     
         def find_events(self, times, volts):
                 events = Events()
@@ -655,7 +656,7 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 fig.clf()
 
-                if self.whoi:
+                if self.whoi_present:
                         plt.subplot(4, 1, (1, 2))
                 else:
                         plt.subplot(3, 1, (1, 2))
@@ -715,7 +716,7 @@ class CoronaBrowser(tk.Frame):
                         ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
                 ax.set_ylim(vr)
 
-                if self.whoi:
+                if self.whoi_present:
                         ax3 = plt.subplot(4, 1, 3, sharex = ax)
                 else:
                         ax3 = plt.subplot(3, 1, 3, sharex = ax)
@@ -735,7 +736,7 @@ class CoronaBrowser(tk.Frame):
                 ax3.set_xlabel('Time')
 
                 # And wind z velocities, if available...
-                if self.whoi:
+                if self.whoi_present:
                         ax4 = plt.subplot(4, 1, 4, sharex = ax)
                         ax4.set_ylabel('Updraft (m/s)')
 
@@ -744,7 +745,7 @@ class CoronaBrowser(tk.Frame):
                         zz = np.fromiter(z, dtype=float)
                         colours = plt.get_cmap('viridis')(X=zz)
                         for i in reversed(order):
-                                ax4.plot(self.whoi_lidar.index, -self.whoi_lidar[self.zwind_legend[i]],
+                                ax4.plot(self.whoi.index, -self.whoi[self.zwind_legend[i]],
                                          label=self.zwind_legend[i], color=colours[i])
                         ax4.legend()
                         #zmesh = ax4.pcolormesh(*np.meshgrid(self.times_lidar, self.zwind_z), self.zv.T, shading='gouraud', cmap='BrBG')
