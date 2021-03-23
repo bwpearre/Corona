@@ -74,9 +74,16 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.no_temperature_correction_check = True
                 self.whoi = False
-                
+
+                if False:
+                        self.debug_seq()
+
+
+        def debug_seq(self):
+                self.no_temperature_correction_check = True
+                self.loadFile(filename='data/20310992_short.csv')
+
 
         def event_detection_enabled(self, state):
                 if state:
@@ -194,16 +201,18 @@ class CoronaBrowser(tk.Frame):
         def debug(self):
                 pdb.set_trace()
 
+        def reset_defaults(self):
+                self.sensor_serial_number = -1
+                self.regressButton.grid_forget()
+                self.useNewRegressionButton.grid_forget()
+
         # Ask for a filename, load it, plot it.
-        def loadFile(self):
-                data_filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
-                if data_filename:
-                        # Reset stuff
-                        self.sensor_serial_number = -1
-                        
-                        self.regressButton.grid_forget()
-                        self.useNewRegressionButton.grid_forget()
-                        self.times, self.volts_raw, self.temps = self.loadFileBen(Path(data_filename))
+        def loadFile(self, filename=False):
+                if not filename:
+                        filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
+                if filename:
+                        self.reset_defaults()
+                        self.times, self.volts_raw, self.temps = self.loadFileBen(Path(filename))
                         self.rmplButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
                         if self.temperature_present:
@@ -242,7 +251,7 @@ class CoronaBrowser(tk.Frame):
                         t = ' after temperature correction'
                 else:
                         t = ''
-                print(f'Potential: mode is {self.common_temp} V{t} (fyi; not used)')
+                print(f'  Potential: mode is {self.common_temp} V{t} (fyi; not used)')
                 
                 self.plotEvents()
 
@@ -250,7 +259,7 @@ class CoronaBrowser(tk.Frame):
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
                 self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
-                if self.no_temperature_correction_check == False:
+                if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
                         
 
@@ -523,47 +532,61 @@ class CoronaBrowser(tk.Frame):
         def loadWHOI(self, times):
                 day_i = -1
 
-                print(f'Start time is {times[0]}, which is file {times[0].strftime("%Y_%j")}. Last year,day is {times[-1].strftime("%Y_%j")}')
-                fname = ''
-                lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
+                firstfnum = times[0].strftime("%Y_%j")
+                lastfnum = times[-1].strftime("%Y_%j")
+                print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
+                fnum = ''
+                #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
 
-                self.times_lidar = []
+                filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
+                             'met': ['met.Vaisala_', '.csv', False ],
+                             'wind': ['met.Anemo_', '.csv', False ]}
+                
                 errors = 0
                 
                 dataframes = []
                 z = []
                 legend = []
                 
-                while fname != lastfname:
+                while fnum != lastfnum:
                         day_i += 1
+                        fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
 
-                        fname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{(times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")}.sta'
-                        print(f'Loading {fname}')
+                        for fileset, prepost in filesets.items():
+                                fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
+                                print(f'      Loading {fname}')
 
-                        # WHOI's file format appears to be tab-delimited in the data section, and =delimited above...
-                        if fname.is_file():
-                                with open(fname, errors='replace') as f:
-                                        row = f.readline()
-                                        if row[0:9] == 'HeaderSize'[0:9]:
-                                                headersize = int(row.split('=')[1])
+                                if fname.is_file():
+                                        if prepost[2]:
+                                                # Special code for WHOI's LIDAR files:
+                                                with open(fname, errors='replace') as f:
+                                                        row = f.readline()
+                                                        if row[0:9] == 'HeaderSize'[0:9]:
+                                                                headersize = int(row.split('=')[1])
+                                                        else:
+                                                                print('Could not get header size. Assuming 0.')
+                                                                headersize = 0
+                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
+                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                                if whoi_lidar_timezone != "UTC+0":
+                                                        raise Exception('LIDAR time offset changed.')
+
+                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
                                         else:
-                                                print('Could not get header size. Skipping.')
+                                                # No check for timezone/td is possible here. Just assume?! FIXME
+                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
+                                                
+                                        dataframes.append(df)
+                                                
+                                        self.whoi = True
+
+                                else:
+                                        print(f'File "{fname}" does not exist.')
+                                        errors += 1
+                                        if errors >= 3:
+                                                print('Not finding WHOI data files. Giving up.')
                                                 break
-                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
-                                whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
-                                if whoi_lidar_timezone != "UTC+0":
-                                        raise Exception('LIDAR time offset changed.')
-                                
-                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
-                                dataframes.append(df)
-                                self.whoi = True
-                        else:
-                                print(f'File "{fname}" does not exist.')
-                                errors += 1
-                                if errors >= 3:
-                                        print('Not finding WHOI data files. Giving up.')
-                                        break
 
                 self.whoi_lidar = pd.concat(dataframes)
                 #self.whoi_lidar.tz_localize('UTC') # See "Just check that it hasn't changed" above.
@@ -716,10 +739,11 @@ class CoronaBrowser(tk.Frame):
                         ax4 = plt.subplot(4, 1, 4, sharex = ax)
                         ax4.set_ylabel('Updraft (m/s)')
 
-                        z = ((l - self.zwind_z[0]) / (self.zwind_z[-1]-self.zwind_z[0]) for l in self.zwind_z)
+                        order = np.argsort(self.zwind_z)
+                        z = ((l - self.zwind_z[order[0]]) / (self.zwind_z[order[-1]]-self.zwind_z[order[0]]) for l in self.zwind_z)
                         zz = np.fromiter(z, dtype=float)
                         colours = plt.get_cmap('viridis')(X=zz)
-                        for i in range(len(self.zwind_z)-1, -1, -1):
+                        for i in reversed(order):
                                 ax4.plot(self.whoi_lidar.index, -self.whoi_lidar[self.zwind_legend[i]],
                                          label=self.zwind_legend[i], color=colours[i])
                         ax4.legend()
