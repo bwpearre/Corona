@@ -74,8 +74,9 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                if True:
-                        self.debug_seq()
+                self.plots = ('Z-wind (m/s)', 'Wind Speed max (m/s)', 'CNR (dB)', 'temperature_mean', 'wind_speed_mean')
+
+                #self.debug_seq()
 
 
         def debug_seq(self):
@@ -576,6 +577,10 @@ class CoronaBrowser(tk.Frame):
                                         else:
                                                 # No check for timezone/td is possible here. Just assume?! FIXME
                                                 df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
+                                                newcolumns = []
+                                                for i in df.columns:
+                                                        newcolumns.append(f'{i[0]} ({i[1]})')
+                                                df.columns=newcolumns
                                                 
                                         dataframes.append(df)
 
@@ -590,15 +595,26 @@ class CoronaBrowser(tk.Frame):
                         self.whoi = pd.concat(dataframes)
                         self.whoi_present = True
                         self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
-                        
-                
+
+                        self.legends = [[] for x in range(len(self.plots))]
+
                         for i,t in enumerate(self.whoi.columns):
-                                if "Z-wind (m/s)" in t:
-                                        legend.append(t)
-                                        z.append(int(t.split('m', 1)[0]))
-                        self.zwind_z = z
-                        self.zwind_legend = legend
-                except:
+                                #if "Z-wind (m/s)" in t:
+                                #        legend.append(t)
+                                #        z.append(int(t.split('m', 1)[0]))
+                                for j in range(len(self.plots)):
+                                        #print(f'Looking for "{self.plots[j]}" in "{t}", j={j}')
+                                        if self.plots[j] in t:
+                                                #print('   ...found')
+                                                self.legends[j].append(t)
+                                                try:
+                                                        z.append(int(t.split('m', 1)[0]))
+                                                except:
+                                                        None
+                                self.zwind_z = z
+                except e:
+                        print(e)
+                        self.whoi_present = False
                         return
     
         def find_events(self, times, volts):
@@ -653,45 +669,46 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
 
-                fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
+                fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
                 fig.clf()
 
-                if self.whoi_present:
-                        plt.subplot(4, 1, (1, 2))
-                else:
-                        plt.subplot(3, 1, (1, 2))
-                ax = fig.gca()
+                nsubplots_base = 2
+                nsubplots = nsubplots_base + len(self.plots)
+                
+                plt.subplot(nsubplots, 1, 1)
+
+                axes = [fig.gca()]
 
                 if self.temperature_present & self.plotTemperatureWithPotential.get():
 
                         color = 'black'
-                        ax.set_xlabel('Time')
-                        ax.set_ylabel('Potential (V)', color=color)
-                        ax.plot(times, volts, color=color, label='Potential', linewidth=1)
-                        ax.tick_params(axis='y', labelcolor=color)
+                        axes[0].set_xlabel('Time')
+                        axes[0].set_ylabel('Potential (V)', color=color)
+                        axes[0].plot(times, volts, color=color, label='Potential', linewidth=1)
+                        axes[0].tick_params(axis='y', labelcolor=color)
 
-                        ax2 = ax.twinx()
+                        ax00 = axes[0].twinx()
 
                         color = 'tab:green'
-                        ax2.set_ylabel('Temperature (°C)', color=color)
-                        ax2.plot(times, temps, color=color, label='Temperature', linewidth=1)
-                        ax2.tick_params(axis='y', labelcolor=color)
+                        ax00.set_ylabel('Temperature (°C)', color=color)
+                        ax00.plot(times, temps, color=color, label='Temperature', linewidth=1)
+                        ax00.tick_params(axis='y', labelcolor=color)
                         
                         for i in range(len(events.start_indices)):
                                 # No longer used; may be back eventually...
                                 if i == 0:
-                                        ax.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                        ax[0].plot(times[events.start_indices[i]:events.end_indices[i]],
                                                 volts[events.start_indices[i]:events.end_indices[i]],
                                                 c='red', linewidth=3, label='event?')
                                 else:
-                                        ax.plot(times[events.start_indices[i]:events.end_indices[i]],
+                                        ax[0].plot(times[events.start_indices[i]:events.end_indices[i]],
                                                 volts[events.start_indices[i]:events.end_indices[i]],
                                                 c='red', linewidth=3)
 
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
-                        ax.plot(times, volts, label='Potential', c='black', linewidth=0.5)
+                        axes[0].plot(times, volts, label='Potential', c='black', linewidth=0.5)
 
                         
                         for i in range(len(events.start_indices)):
@@ -709,17 +726,15 @@ class CoronaBrowser(tk.Frame):
 
 
 
-                # Ted wants lines at midnight. Can't easily do that using matplotlib, so do it manually
+                # Lines at midnight.
                 dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
-                vr = ax.get_ylim()
+                vr = axes[0].get_ylim()
                 for i in range(len(dr)):
-                        ax.plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
-                ax.set_ylim(vr)
+                        axes[0].plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
+                axes[0].set_ylim(vr)
 
-                if self.whoi_present:
-                        ax3 = plt.subplot(4, 1, 3, sharex = ax)
-                else:
-                        ax3 = plt.subplot(3, 1, 3, sharex = ax)
+                # Spectrogram:
+                axes.append(plt.subplot(nsubplots, 1, 2, sharex = axes[0]))
                 
                 winlen = 128
                 noverlap = int(winlen / 2)
@@ -731,36 +746,39 @@ class CoronaBrowser(tk.Frame):
                 #Sxx = np.log(Sxx)
                 Sxx = np.sqrt(Sxx)
 
-                ax3.pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
-                ax3.set_ylabel('Frequency [Hz]')
-                ax3.set_xlabel('Time')
+                axes[1].pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
+                axes[1].set_ylabel('Frequency [Hz]')
+                axes[1].set_xlabel('Time')
 
-                # And wind z velocities, if available...
+                # WHOI data:
                 if self.whoi_present:
-                        ax4 = plt.subplot(4, 1, 4, sharex = ax)
-                        ax4.set_ylabel('Updraft (m/s)')
+                        n = nsubplots_base
+                        for toplot in self.plots:
+                                axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
+                                axes[n].set_ylabel(toplot)
 
-                        order = np.argsort(self.zwind_z)
-                        z = ((l - self.zwind_z[order[0]]) / (self.zwind_z[order[-1]]-self.zwind_z[order[0]]) for l in self.zwind_z)
-                        zz = np.fromiter(z, dtype=float)
-                        colours = plt.get_cmap('viridis')(X=zz)
-                        for i in reversed(order):
-                                ax4.plot(self.whoi.index, -self.whoi[self.zwind_legend[i]],
-                                         label=self.zwind_legend[i], color=colours[i])
-                        ax4.legend()
-                        #zmesh = ax4.pcolormesh(*np.meshgrid(self.times_lidar, self.zwind_z), self.zv.T, shading='gouraud', cmap='BrBG')
-                        #fig.colorbar(zmesh)
-                        
-                        ax4.set_xlim(self.times[0], self.times[-1])
+                                order = np.argsort(self.zwind_z)
+                                z = ((l - self.zwind_z[order[0]]) / (self.zwind_z[order[-1]]-self.zwind_z[order[0]]) for l in self.zwind_z)
+                                zz = np.fromiter(z, dtype=float)
+                                colours = plt.get_cmap('viridis')(X=zz)
+                                #for i in reversed(order):
+                                #        axes[n].plot(self.whoi.index, self.whoi[self.zwind_legend[i]],
+                                #                 label=self.zwind_legend[i], color=colours[i])
+                                #pdb.set_trace()
+                                for i in self.legends[n-nsubplots_base]:
+                                        axes[n].plot(self.whoi.index, self.whoi[i],
+                                                     label=i)
+                                #axes[n].legend()
+                                axes[n].set_xlim(self.times[0], self.times[-1])
+                                n += 1
                 
-                
-                ax.set_title(self.datafile.stem)
+                axes[0].set_title(self.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
 
 cor = CoronaBrowser()
-cor.master.title('Corona browser')
+cor.master.title('Atmospheric Voltage Browser')
 #try:
 cor.mainloop()
 # except:
