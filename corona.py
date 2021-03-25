@@ -74,7 +74,7 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Wind Speed max (m/s)', 'CNR (dB)', 'temperature_mean', 'wind_speed_mean')
+                self.plots = ('Z-wind (m/s)', 'Wind Speed max (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Direction')
 
                 #self.debug_seq()
 
@@ -154,7 +154,9 @@ class CoronaBrowser(tk.Frame):
 
         # Reset variables that should be tossed out if a new file is loaded or etc.
         def reset_defaults(self):
-                self.whoi_present = False
+                self.temps = []
+                self.volts_scaled = []
+                self.whoi_graphs = 0
                 self.sensor_serial_number = -1
                 self.regressButton.grid_forget()
                 self.useNewRegressionButton.grid_forget()
@@ -259,7 +261,7 @@ class CoronaBrowser(tk.Frame):
 
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
-                self.plot_voltages_matplotlib(self.times, self.volts, self.temps, self.events)
+                self.plot_timeseries(self.times, self.volts, self.temps, self.events)
                 if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
                         
@@ -420,6 +422,7 @@ class CoronaBrowser(tk.Frame):
             print(f'----- Loading {fname} -----')
             self.waitbar_indeterminate_start('Checking file size...')
             num_lines = sum(1 for line in open(fname))
+            self.waitbar_indeterminate_done()
             # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
             self.temperature_present = 0
@@ -498,13 +501,13 @@ class CoronaBrowser(tk.Frame):
                                             t = dt.datetime.strptime(row[date_column], self.date_format)
                                             t = times.append(t.replace(tzinfo=self.timezone_corona))
                                     except ValueError:
-                                            print(f'Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
+                                            print(f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
                                             continue;
                                     volts.append(float(row[voltage_column]))
                                     if self.temperature_present:
                                             temps.append(float(row[self.temperature_present]))
                             else:
-                                    print(f'Line {line_count} "{row}" contains missing values. Ignoring the row.')
+                                    print(f'  * Line {line_count} "{row}" contains missing values. Ignoring the row.')
 
 
 
@@ -535,6 +538,9 @@ class CoronaBrowser(tk.Frame):
 
                 firstfnum = times[0].strftime("%Y_%j")
                 lastfnum = times[-1].strftime("%Y_%j")
+
+                self.waitbar_start('  Loading WHOI data...', (times[-1]-times[0]).days+1)
+
                 print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
                 fnum = ''
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
@@ -543,19 +549,17 @@ class CoronaBrowser(tk.Frame):
                              'met': ['met.Vaisala_', '.csv', False ],
                              'wind': ['met.Anemo_', '.csv', False ]}
                 
-                errors = 0
-                
                 dataframes = []
-                z = []
-                legend = []
+                errors = 0
                 
                 while fnum != lastfnum:
                         day_i += 1
+                        self.waitbar_update(day_i)
                         fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
 
                         for fileset, prepost in filesets.items():
                                 fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
-                                print(f'      Loading {fname}')
+                                #print(f'      Loading {fname}')
 
                                 if fname.is_file():
                                         if prepost[2]:
@@ -585,37 +589,40 @@ class CoronaBrowser(tk.Frame):
                                         dataframes.append(df)
 
                                 else:
-                                        print(f'File "{fname}" does not exist.')
+                                        print(f'  File "{fname}" does not exist.')
                                         errors += 1
                                         if errors >= 3:
-                                                print('Not finding WHOI data files. Giving up.')
+                                                print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
-                try:
-                        self.whoi = pd.concat(dataframes)
-                        self.whoi_present = True
-                        self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi = pd.concat(dataframes)
+                self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
 
-                        self.legends = [[] for x in range(len(self.plots))]
+                self.legends = {p:[] for p in self.plots}
+                self.z = {p:[] for p in self.plots}
 
-                        for i,t in enumerate(self.whoi.columns):
-                                #if "Z-wind (m/s)" in t:
-                                #        legend.append(t)
-                                #        z.append(int(t.split('m', 1)[0]))
-                                for j in range(len(self.plots)):
-                                        #print(f'Looking for "{self.plots[j]}" in "{t}", j={j}')
-                                        if self.plots[j] in t:
-                                                #print('   ...found')
-                                                self.legends[j].append(t)
-                                                try:
-                                                        z.append(int(t.split('m', 1)[0]))
-                                                except:
-                                                        None
-                                self.zwind_z = z
-                except e:
-                        print(e)
-                        self.whoi_present = False
-                        return
+                #self.legends = [[] for x in range(len(self.plots))]
+                #self.z = [[] for x in range(len(self.plots))]
+
+                for i,t in enumerate(self.whoi.columns):
+                        #print(f' Looking at column {i} : {t}')
+                        for toplot in self.plots:
+                                #print(f'Looking for "{self.plots[j]}" in "{t}", j={j}')
+                                if toplot in t:
+                                        #print('   ...found')
+                                        #pdb.set_trace()
+                                        #print(self.legends)
+                                        self.legends[toplot].append(t)
+                                        #print(f'Adding: self.legends[{toplot}].append({t})')
+                                        try:
+                                                self.z[toplot].append(int(t.split('m', 1)[0]))
+                                        except:
+                                                None
+                for toplot in self.plots:
+                        if len(self.legends[toplot]):
+                                self.whoi_graphs += 1
+
+                self.waitbar_done()
     
         def find_events(self, times, volts):
                 events = Events()
@@ -667,13 +674,13 @@ class CoronaBrowser(tk.Frame):
                 return events
 
         # Plot voltage vs time using Matplotlib
-        def plot_voltages_matplotlib(self, times, volts, temps=[], events=[]):
+        def plot_timeseries(self, times, volts, temps=[], events=[]):
 
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
                 fig.clf()
 
                 nsubplots_base = 2
-                nsubplots = nsubplots_base + len(self.plots)
+                nsubplots = nsubplots_base + self.whoi_graphs
                 
                 plt.subplot(nsubplots, 1, 1)
 
@@ -751,23 +758,24 @@ class CoronaBrowser(tk.Frame):
                 axes[1].set_xlabel('Time')
 
                 # WHOI data:
-                if self.whoi_present:
+                if self.whoi_graphs:
                         n = nsubplots_base
                         for toplot in self.plots:
+                                if len(self.legends[toplot]) == 0:
+                                        continue
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
                                 axes[n].set_ylabel(toplot)
 
-                                order = np.argsort(self.zwind_z)
-                                z = ((l - self.zwind_z[order[0]]) / (self.zwind_z[order[-1]]-self.zwind_z[order[0]]) for l in self.zwind_z)
+                                order = np.argsort(self.z[toplot])
+                                z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
                                 zz = np.fromiter(z, dtype=float)
                                 colours = plt.get_cmap('viridis')(X=zz)
-                                #for i in reversed(order):
-                                #        axes[n].plot(self.whoi.index, self.whoi[self.zwind_legend[i]],
-                                #                 label=self.zwind_legend[i], color=colours[i])
-                                #pdb.set_trace()
-                                for i in self.legends[n-nsubplots_base]:
+                                colour = 0
+                                
+                                for i in [self.legends[toplot][x] for x in order]:
                                         axes[n].plot(self.whoi.index, self.whoi[i],
-                                                     label=i)
+                                                     label=i, color=colours[colour])
+                                        colour += 1
                                 #axes[n].legend()
                                 axes[n].set_xlim(self.times[0], self.times[-1])
                                 n += 1
