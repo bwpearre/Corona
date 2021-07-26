@@ -74,14 +74,14 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Wind Speed max (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Direction')
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
 
-                #self.debug_seq()
+                self.debug_seq()
 
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                self.loadFile(filename='data/20310992_short.csv')
+                self.loadFile(filename='data/20310992_9.csv')
 
 
         def event_detection_enabled(self, state):
@@ -135,6 +135,7 @@ class CoronaBrowser(tk.Frame):
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
                 self.regressButton = tk.Button(self, text='Plot potential vs temp', command=self.plot_temperature_corrections)
                 self.useNewRegressionButton = tk.Button(self, text='Use new regression this session', command=self.use_new_correction)
+                self.correlationButton = tk.Button(self, text='Statistics', command=self.doStatistics, state='disabled')
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=row, column=0, columnspan=5)
@@ -207,6 +208,7 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar_label['text'] = 'Ready.'
 
         def debug(self):
+                pd.set_option('display.max_rows', 2000) # print e.g. all columns in self.whoi.dtypes
                 pdb.set_trace()
 
         # Ask for a filename, load it, plot it.
@@ -225,6 +227,7 @@ class CoronaBrowser(tk.Frame):
 
                         self.applyCorrections()
                         self.saveButton['state'] = 'normal'
+                        self.doStatisticsButton['state'] = 'normal'
 
         def setVoltageScalingFactor(self, vsf):
                 self.voltageScalingFactor = vsf
@@ -431,6 +434,9 @@ class CoronaBrowser(tk.Frame):
             scaled_column = -1
             temperature_in_freedom_units = False
 
+            # Also read in a pandas DataFrame just because
+
+
             with fname.open() as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
@@ -544,10 +550,13 @@ class CoronaBrowser(tk.Frame):
                 print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
                 fnum = ''
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
-
+                # {<directory>: [ <filename prefix>, <filename suffix>, <invoke special code for WHOI's LIDAR files> ]}
+                #filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
+                #             'met': ['met.Vaisala_', '.csv', False ],
+                #             'wind': ['met.Anemo_', '.csv', False ]}
                 filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
-                             'met': ['met.Vaisala_', '.csv', False ],
-                             'wind': ['met.Anemo_', '.csv', False ]}
+                             'met': ['asit.mininode.CLRohn_', '.csv', False ],
+                             'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
                 
                 dataframes = []
                 errors = 0
@@ -591,7 +600,7 @@ class CoronaBrowser(tk.Frame):
                                 else:
                                         print(f'  File "{fname}" does not exist.')
                                         errors += 1
-                                        if errors >= 3:
+                                        if errors >= 30:
                                                 print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
@@ -607,7 +616,7 @@ class CoronaBrowser(tk.Frame):
                 for i,t in enumerate(self.whoi.columns):
                         #print(f' Looking at column {i} : {t}')
                         for toplot in self.plots:
-                                #print(f'Looking for "{self.plots[j]}" in "{t}", j={j}')
+                                #print(f'Looking for "{toplot}" in "{t}"')
                                 if toplot in t:
                                         #print('   ...found')
                                         #pdb.set_trace()
@@ -757,7 +766,7 @@ class CoronaBrowser(tk.Frame):
                 axes[1].set_ylabel('Frequency [Hz]')
                 axes[1].set_xlabel('Time')
 
-                # WHOI data:
+                ###### WHOI data: ######
                 if self.whoi_graphs:
                         n = nsubplots_base
                         for toplot in self.plots:
@@ -766,16 +775,19 @@ class CoronaBrowser(tk.Frame):
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
                                 axes[n].set_ylabel(toplot)
 
-                                order = np.argsort(self.z[toplot])
-                                z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
-                                zz = np.fromiter(z, dtype=float)
-                                colours = plt.get_cmap('viridis')(X=zz)
-                                colour = 0
-                                
-                                for i in [self.legends[toplot][x] for x in order]:
-                                        axes[n].plot(self.whoi.index, self.whoi[i],
-                                                     label=i, color=colours[colour])
-                                        colour += 1
+                                if len(self.legends[toplot]) == 1:
+                                        axes[n].plot(self.whoi.index, self.whoi[toplot], label=i)
+                                else:
+                                        order = np.argsort(self.z[toplot])
+                                        z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
+                                        zz = np.fromiter(z, dtype=float)
+                                        colours = plt.get_cmap('viridis')(X=zz)
+                                        colour = 0
+
+                                        for i in [self.legends[toplot][x] for x in order]:
+                                                axes[n].plot(self.whoi.index, self.whoi[i],
+                                                             label=i, color=colours[colour])
+                                                colour += 1
                                 #axes[n].legend()
                                 axes[n].set_xlim(self.times[0], self.times[-1])
                                 n += 1
@@ -785,6 +797,9 @@ class CoronaBrowser(tk.Frame):
                 plt.show()
     
 
+        def doStatistics(self):
+                
+                
 cor = CoronaBrowser()
 cor.master.title('Atmospheric Voltage Browser')
 #try:
