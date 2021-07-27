@@ -48,6 +48,13 @@ class CoronaBrowser(tk.Frame):
         def __init__(self, master=None):
                 tk.Frame.__init__(self, master)
 
+                # Actually print stuff when I ask:
+                np.set_printoptions(threshold=np.inf)
+                pd.set_option('display.max_rows', None)
+                pd.set_option('display.max_columns', None)
+                pd.set_option('display.width', None)
+                pd.set_option('display.max_colwidth', -1)
+                
                 # matplotlib wants to size windows in inches. Find out the screen size in inches:
                 self.screendims_inches = [self.winfo_screenmmwidth(), self.winfo_screenmmheight()]
                 self.screendims_inches = [x / 25.4 for x in self.screendims_inches]
@@ -74,14 +81,16 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'AVM volts')
+                # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
 
                 self.debug_seq()
 
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                self.loadFile(filename='data/20310992_9.csv')
+                #self.loadFile(filename='data/20310992_9.csv')
+                self.loadFile(filename='data/20310992_27.csv')
 
 
         def event_detection_enabled(self, state):
@@ -134,8 +143,12 @@ class CoronaBrowser(tk.Frame):
                 self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
                 self.regressButton = tk.Button(self, text='Plot potential vs temp', command=self.plot_temperature_corrections)
+                self.regressButton.grid(row=row, column=2)
                 self.useNewRegressionButton = tk.Button(self, text='Use new regression this session', command=self.use_new_correction)
-                self.correlationButton = tk.Button(self, text='Statistics', command=self.doStatistics, state='disabled')
+                self.useNewRegressionButton.grid(row=row, column=3)
+                row += 1
+                self.doStatisticsButton = tk.Button(self, text='Statistics', command=self.doStatistics, state='disabled')
+                self.doStatisticsButton.grid(row=row, column=0)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=row, column=0, columnspan=5)
@@ -208,7 +221,7 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar_label['text'] = 'Ready.'
 
         def debug(self):
-                pd.set_option('display.max_rows', 2000) # print e.g. all columns in self.whoi.dtypes
+                pd.set_option('display.max_rows', None) # print e.g. all columns in self.whoi.dtypes
                 pdb.set_trace()
 
         # Ask for a filename, load it, plot it.
@@ -226,8 +239,13 @@ class CoronaBrowser(tk.Frame):
                                 self.event_detection_enabled(True)
 
                         self.applyCorrections()
+                        self.loadWHOI(self.times)
+                
+                        
                         self.saveButton['state'] = 'normal'
                         self.doStatisticsButton['state'] = 'normal'
+                        
+                        self.plotEvents()
 
         def setVoltageScalingFactor(self, vsf):
                 self.voltageScalingFactor = vsf
@@ -259,8 +277,6 @@ class CoronaBrowser(tk.Frame):
                         t = ''
                 print(f'  Potential: mode is {self.common_temp} V{t} (fyi; not used)')
                 
-                self.plotEvents()
-
 
         def plotEvents(self):
                 self.events = self.find_events(self.times, self.volts)
@@ -434,9 +450,6 @@ class CoronaBrowser(tk.Frame):
             scaled_column = -1
             temperature_in_freedom_units = False
 
-            # Also read in a pandas DataFrame just because
-
-
             with fname.open() as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
@@ -531,10 +544,7 @@ class CoronaBrowser(tk.Frame):
                     self.useNewRegressionButton['state'] = 'disabled'
             times = times[0:length]
             #volts = np.array(volts[0:length])
-            volts = np.array(volts[0:length]).reshape((length, 1))
-
-            # See if we can find some WHOI data...
-            self.loadWHOI(times)
+            volts = np.array(volts[0:length]).reshape((length,1))
 
             return times, volts, temps
 
@@ -547,31 +557,38 @@ class CoronaBrowser(tk.Frame):
 
                 self.waitbar_start('  Loading WHOI data...', (times[-1]-times[0]).days+1)
 
-                print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
+                #print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
                 fnum = ''
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
                 # {<directory>: [ <filename prefix>, <filename suffix>, <invoke special code for WHOI's LIDAR files> ]}
                 #filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
                 #             'met': ['met.Vaisala_', '.csv', False ],
                 #             'wind': ['met.Anemo_', '.csv', False ]}
+
+                # Here are the files. A hassle since a Dict isn't ordered.
                 filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
                              'met': ['asit.mininode.CLRohn_', '.csv', False ],
                              'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
+
                 
                 dataframes = []
+
                 errors = 0
                 
                 while fnum != lastfnum:
                         day_i += 1
                         self.waitbar_update(day_i)
                         fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
+                        print(f' Loading WHOI files {fnum}...')
+
+                        daily_data = []
 
                         for fileset, prepost in filesets.items():
                                 fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
                                 #print(f'      Loading {fname}')
 
                                 if fname.is_file():
-                                        if prepost[2]:
+                                        if fileset == 'lidar':
                                                 # Special code for WHOI's LIDAR files:
                                                 with open(fname, errors='replace') as f:
                                                         row = f.readline()
@@ -587,15 +604,36 @@ class CoronaBrowser(tk.Frame):
                                                         raise Exception('LIDAR time offset changed.')
 
                                                 df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
+
+                                                if len(daily_data):
+                                                        daily_data = daily_data.join(df, how='outer')
+                                                else:
+                                                        daily_data = df
+
                                         else:
                                                 # No check for timezone/td is possible here. Just assume?! FIXME
                                                 df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
                                                 newcolumns = []
+
+                                                # The column header is 2 rows deep: measurement and units. Also, there's
+                                                # column-name overlap for the mean and std temperatures in 'met' and 'wind'
+                                                # filesets. Join and clean:
                                                 for i in df.columns:
-                                                        newcolumns.append(f'{i[0]} ({i[1]})')
+                                                        if i[0].startswith('temperature'):
+                                                                newcolumns.append(f'{i[0]} ({fileset}) ({i[1]})')
+                                                        else:
+                                                                newcolumns.append(f'{i[0]} ({i[1]})')
                                                 df.columns=newcolumns
                                                 
-                                        dataframes.append(df)
+
+                                                if len(daily_data):
+                                                        daily_data = daily_data.join(df, how='outer')
+                                                else:
+                                                        daily_data = df
+                                                        
+
+
+                                        dataframes.append(daily_data)
 
                                 else:
                                         print(f'  File "{fname}" does not exist.')
@@ -604,8 +642,18 @@ class CoronaBrowser(tk.Frame):
                                                 print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
-                self.whoi = pd.concat(dataframes)
-                self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi = pd.concat(dataframes, copy=False)
+                self.whoi = self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi.dropna(axis='columns', how='all', inplace=True)
+
+                # Also, stick Ted's data into dataframes. This has already had the timezone sorted.
+                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                # Downsample to the relevant timestamps:
+                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)]).mean()
+                self.whoi = self.whoi.join(df)
+                foo = self.whoi.corr()
+                print(foo)
+                pdb.set_trace()
 
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
@@ -798,10 +846,13 @@ class CoronaBrowser(tk.Frame):
     
 
         def doStatistics(self):
+                a = 3
                 
                 
 cor = CoronaBrowser()
 cor.master.title('Atmospheric Voltage Browser')
+
+
 #try:
 cor.mainloop()
 # except:
