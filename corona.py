@@ -89,8 +89,8 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                #self.loadFile(filename='data/20310992_9.csv')
-                self.loadFile(filename='data/20310992_27.csv')
+                #self.loadFile(filename='data/20310992_27.csv')
+                self.loadFile(filename='data/20310992_9.csv')
 
 
         def event_detection_enabled(self, state):
@@ -643,22 +643,10 @@ class CoronaBrowser(tk.Frame):
                                                 return
 
                 self.whoi = pd.concat(dataframes, copy=False)
-                #self.whoi.index = self.whoi.index.drop_duplicates()
-                self.whoi = self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
-                self.whoi.dropna(axis='columns', how='all', inplace=True)
                 self.whoi.sort_index(inplace=True, kind='mergesort')
-
-                # Also, stick Ted's data into dataframes. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
-                # Downsample onto the WHOI data's timestamps:
-                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
-                
-                #self.whoi = self.whoi.join(df)
-                whoi_interp = self.whoi.interpolate(method='linear')
-                
-                foo = whoi_interp.corrwith(df)
-                print(foo)
-                pdb.set_trace()
+                self.whoi.drop_duplicates(inplace=True, keep='first') # FIXME: This will toss some rows that contain data. Fuck it. Fix later.
+                self.whoi = self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi.dropna(inplace=True, axis='columns', how='all')
 
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
@@ -851,10 +839,49 @@ class CoronaBrowser(tk.Frame):
     
 
         def doStatistics(self):
-                a = 3
+                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
+                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                # Downsample onto the WHOI data's timestamps:
+                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
                 
+                #self.whoi = self.whoi.join(df)
                 
-cor = CoronaBrowser()
+                whoi_interp = self.whoi.interpolate(method='linear', limit_direction='both')
+
+                # Easiest most braindead way to line up all the data?
+                df = df.join(whoi_interp)
+                cor = df.corr()
+                corV = cor.loc[:,'AVM volts']
+
+                # Show the full correlation matrix
+                if False:
+                        plt.matshow(np.abs(cor))
+                        plt.show()
+                        plt.xticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14, rotation=45)
+                        plt.yticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14)
+                        cb = plt.colorbar()
+                        cb.ax.tick_params(labelsize=14)
+                        plt.title('Correlation Matrix', fontsize=16);
+
+                if True:
+                        # List interesting indices:
+                        neat = corV.index[np.abs(corV) > 0.2]
+                        neat = neat[1:-1] # Don't need to see self-correlation of 1
+                        # This is too buggy:
+                        #df.plot(x = 'AVM volts', kind = 'scatter', subplots = True)
+                        
+                        n = int(np.ceil(np.sqrt(neat.size)))
+                        m = int(np.ceil(neat.size / n))
+                        fig, axs = plt.subplots(n, m)
+                        axsf = axs.flat
+                        counter = 0
+                        for y in neat:
+                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], title = f'{y}, corr = {corV.loc[y]:.2f}')
+                                counter += 1
+
+root = tk.Tk()
+root.geometry('+0-0')
+cor = CoronaBrowser(master = root)
 cor.master.title('Atmospheric Voltage Browser')
 
 # Actually print stuff when I ask:
