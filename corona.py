@@ -643,15 +643,20 @@ class CoronaBrowser(tk.Frame):
                                                 return
 
                 self.whoi = pd.concat(dataframes, copy=False)
+                #self.whoi.index = self.whoi.index.drop_duplicates()
                 self.whoi = self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
                 self.whoi.dropna(axis='columns', how='all', inplace=True)
+                self.whoi.sort_index(inplace=True, kind='mergesort')
 
                 # Also, stick Ted's data into dataframes. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
-                # Downsample to the relevant timestamps:
-                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)]).mean()
-                self.whoi = self.whoi.join(df)
-                foo = self.whoi.corr()
+                # Downsample onto the WHOI data's timestamps:
+                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
+                
+                #self.whoi = self.whoi.join(df)
+                whoi_interp = self.whoi.interpolate(method='linear')
+                
+                foo = whoi_interp.corrwith(df)
                 print(foo)
                 pdb.set_trace()
 
@@ -852,6 +857,12 @@ class CoronaBrowser(tk.Frame):
 cor = CoronaBrowser()
 cor.master.title('Atmospheric Voltage Browser')
 
+# Actually print stuff when I ask:
+np.set_printoptions(threshold=np.inf)
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+pd.set_option('display.max_colwidth', -1)
 
 #try:
 cor.mainloop()
