@@ -23,6 +23,7 @@ from pathlib import Path
 import re
 import warnings
 import pandas as pd
+import pytz
 
 
 # 20311011 is good
@@ -81,7 +82,7 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'AVM volts')
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
 
                 self.debug_seq()
@@ -89,8 +90,8 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                #self.loadFile(filename='data/20310992_27.csv')
                 self.loadFile(filename='data/20310992_9.csv')
+                #self.loadFile(filename='data/trunc.csv')
 
 
         def event_detection_enabled(self, state):
@@ -445,6 +446,7 @@ class CoronaBrowser(tk.Frame):
             # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.waitbar_start('Loading...', num_lines)
             self.temperature_present = 0
+            timezone_utc = pytz.timezone("UTC")
             date_column = -1
             voltage_column = -1
             scaled_column = -1
@@ -479,8 +481,8 @@ class CoronaBrowser(tk.Frame):
                                                 timedelta_corona = dt.timedelta(hours=abs(int(utco[0])), minutes=int(utco[1]))
                                                 if np.sign(int(utco[0])) == -1:
                                                         timedelta_corona = -timedelta_corona
-                                                self.timezone_corona = dt.timezone(timedelta_corona)
-                                                print(f'            Timezone is {self.timezone_corona}')
+                                                timezone_corona = dt.timezone(timedelta_corona)
+                                                print(f'            Timezone is {timezone_corona}')
                                         if row[column][0:4].lower() == "temp":
                                                 # 0-indexing makes this risky, but I'm assuming that the first column is never temperature
                                                 self.temperature_present = column
@@ -517,8 +519,8 @@ class CoronaBrowser(tk.Frame):
                                     print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
                                     try:
-                                            t = dt.datetime.strptime(row[date_column], self.date_format)
-                                            t = times.append(t.replace(tzinfo=self.timezone_corona))
+                                            t = dt.datetime.strptime(row[date_column], self.date_format) - timedelta_corona
+                                            times.append(timezone_utc.localize(t))
                                     except ValueError:
                                             print(f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{self.date_format}".')
                                             continue;
@@ -539,18 +541,17 @@ class CoronaBrowser(tk.Frame):
                     if temperature_in_freedom_units:
                             temps =(temps - 32) * 5/9
                             temperature_in_freedom_units = False # Unnecessary, but just in case...
-                    self.regressButton.grid(row=3, column=4)
-                    self.useNewRegressionButton.grid(row=3, column=5)
-                    self.useNewRegressionButton['state'] = 'disabled'
-            times = times[0:length]
-            #volts = np.array(volts[0:length])
+                            self.regressButton.grid(row=3, column=4)
+                            self.useNewRegressionButton.grid(row=3, column=5)
+                            self.useNewRegressionButton['state'] = 'disabled'
+                            times = times[0:length]
+                            #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length,1))
 
             return times, volts, temps
 
 
         def loadWHOI(self, times):
-                day_i = -1
 
                 firstfnum = times[0].strftime("%Y_%j")
                 lastfnum = times[-1].strftime("%Y_%j")
@@ -558,7 +559,7 @@ class CoronaBrowser(tk.Frame):
                 self.waitbar_start('  Loading WHOI data...', (times[-1]-times[0]).days+1)
 
                 #print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
-                fnum = ''
+
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
                 # {<directory>: [ <filename prefix>, <filename suffix>, <invoke special code for WHOI's LIDAR files> ]}
                 #filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
@@ -567,12 +568,21 @@ class CoronaBrowser(tk.Frame):
 
                 # Here are the files. A hassle since a Dict isn't ordered.
                 filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
-                             'met': ['asit.mininode.CLRohn_', '.csv', False ],
-                             'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
-
+                            'met': ['asit.mininode.CLRohn_', '.csv', False ],
+                            'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
                 
                 dataframes = []
 
+                
+                # Okay, this is fucking stupid: I am going to read in
+                # everything, then purge duplicate rows, then read in
+                # everything AGAIN to fill in all the purged
+                # data. Thanks, Python.
+
+                ### ROUND 1 ###
+                
+                day_i = -1
+                fnum = ''
                 errors = 0
                 
                 while fnum != lastfnum:
@@ -597,9 +607,9 @@ class CoronaBrowser(tk.Frame):
                                                         else:
                                                                 print('Could not get header size. Assuming 0.')
                                                                 headersize = 0
-                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
-                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                                        mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
+                                                        whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                        # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                 if whoi_lidar_timezone != "UTC+0":
                                                         raise Exception('LIDAR time offset changed.')
 
@@ -609,6 +619,7 @@ class CoronaBrowser(tk.Frame):
                                                         daily_data = daily_data.join(df, how='outer')
                                                 else:
                                                         daily_data = df
+
 
                                         else:
                                                 # No check for timezone/td is possible here. Just assume?! FIXME
@@ -624,16 +635,13 @@ class CoronaBrowser(tk.Frame):
                                                         else:
                                                                 newcolumns.append(f'{i[0]} ({i[1]})')
                                                 df.columns=newcolumns
-                                                
+                                                                
 
                                                 if len(daily_data):
                                                         daily_data = daily_data.join(df, how='outer')
                                                 else:
                                                         daily_data = df
-                                                        
 
-
-                                        dataframes.append(daily_data)
 
                                 else:
                                         print(f'  File "{fname}" does not exist.')
@@ -642,12 +650,81 @@ class CoronaBrowser(tk.Frame):
                                                 print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
+                        dataframes.append(daily_data)
+                        
                 self.whoi = pd.concat(dataframes, copy=False)
+                print(f'Before dropping duplicates: dataset is {self.whoi.shape}')
                 self.whoi.sort_index(inplace=True, kind='mergesort')
-                self.whoi.drop_duplicates(inplace=True, keep='first') # FIXME: This will toss some rows that contain data. Fuck it. Fix later.
-                self.whoi = self.whoi.tz_localize('UTC') # See "Just check that it hasn't changed" above.
+                self.whoi = self.whoi[~self.whoi.index.duplicated(keep='first')] # FIXME: This will toss some rows that contain data. Fixed in ROUND 2.
                 self.whoi.dropna(inplace=True, axis='columns', how='all')
+                print('Interpolating 20-minute to 10-minute data...')
+                self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
 
+
+                ### ROUND 2 ###
+
+                print(f'Before ROUND 2: dataset is {self.whoi.shape}')
+                
+                day_i = -1
+                fnum = ''
+                errors = 0
+                
+                while fnum != lastfnum:
+                        day_i += 1
+                        self.waitbar_update(day_i)
+                        fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
+                        print(f' Loading WHOI files {fnum}...')
+
+                        for fileset, prepost in filesets.items():
+                                fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
+                                #print(f'      Loading {fname}')
+
+                                if fname.is_file():
+                                        if fileset == 'lidar':
+                                                # Special code for WHOI's LIDAR files:
+                                                with open(fname, errors='replace') as f:
+                                                        row = f.readline()
+                                                        if row[0:9] == 'HeaderSize'[0:9]:
+                                                                headersize = int(row.split('=')[1])
+                                                        else:
+                                                                print('Could not get header size. Assuming 0.')
+                                                                headersize = 0
+                                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
+                                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                                if whoi_lidar_timezone != "UTC+0":
+                                                        raise Exception('LIDAR time offset changed.')
+
+                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
+
+                                                self.whoi.update(df)
+
+                                        else:
+                                                # No check for timezone/td is possible here. Just assume?! FIXME
+                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
+                                                newcolumns = []
+
+                                                # The column header is 2 rows deep: measurement and units. Also, there's
+                                                # column-name overlap for the mean and std temperatures in 'met' and 'wind'
+                                                # filesets. Join and clean:
+                                                for i in df.columns:
+                                                        if i[0].startswith('temperature'):
+                                                                newcolumns.append(f'{i[0]} ({fileset}) ({i[1]})')
+                                                        else:
+                                                                newcolumns.append(f'{i[0]} ({i[1]})')
+                                                df.columns=newcolumns
+                                                                
+                                                self.whoi.update(df)
+                                                
+
+                                else:
+                                        print(f'  File "{fname}" does not exist.')
+                                        errors += 1
+                                        if errors >= 30:
+                                                print('  [[ Not finding WHOI data files. Giving up. ]]')
+                                                return
+
+                self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
 
@@ -814,7 +891,7 @@ class CoronaBrowser(tk.Frame):
                                 if len(self.legends[toplot]) == 0:
                                         continue
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
-                                axes[n].set_ylabel(toplot)
+                                axes[n].set_ylabel(toplot, rotation=60, ha='right')
 
                                 if len(self.legends[toplot]) == 1:
                                         axes[n].plot(self.whoi.index, self.whoi[toplot], label=i)
@@ -876,7 +953,7 @@ class CoronaBrowser(tk.Frame):
                         axsf = axs.flat
                         counter = 0
                         for y in neat:
-                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], title = f'{y}, corr = {corV.loc[y]:.2f}')
+                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], title = f'{y}, corr = {corV.loc[y]:.2f}', s=0.01, c='black')
                                 counter += 1
 
 root = tk.Tk()
@@ -889,7 +966,7 @@ np.set_printoptions(threshold=np.inf)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
-pd.set_option('display.max_colwidth', -1)
+pd.set_option('display.max_colwidth', None)
 
 #try:
 cor.mainloop()
