@@ -657,8 +657,6 @@ class CoronaBrowser(tk.Frame):
                 self.whoi.sort_index(inplace=True, kind='mergesort')
                 self.whoi = self.whoi[~self.whoi.index.duplicated(keep='first')] # FIXME: This will toss some rows that contain data. Fixed in ROUND 2.
                 self.whoi.dropna(inplace=True, axis='columns', how='all')
-                print('Interpolating 20-minute to 10-minute data...')
-                self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
 
 
                 ### ROUND 2 ###
@@ -727,6 +725,8 @@ class CoronaBrowser(tk.Frame):
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
+                print('Interpolating 20-minute to 10-minute data...')
+                self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
 
                 #self.legends = [[] for x in range(len(self.plots))]
                 #self.z = [[] for x in range(len(self.plots))]
@@ -891,7 +891,7 @@ class CoronaBrowser(tk.Frame):
                                 if len(self.legends[toplot]) == 0:
                                         continue
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
-                                axes[n].set_ylabel(toplot, rotation=60, ha='right')
+                                axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
 
                                 if len(self.legends[toplot]) == 1:
                                         axes[n].plot(self.whoi.index, self.whoi[toplot], label=i)
@@ -919,7 +919,7 @@ class CoronaBrowser(tk.Frame):
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
                 # Downsample onto the WHOI data's timestamps:
-                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
+                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).std()
                 
                 #self.whoi = self.whoi.join(df)
                 
@@ -941,8 +941,10 @@ class CoronaBrowser(tk.Frame):
                         plt.title('Correlation Matrix', fontsize=16);
 
                 if True:
-                        # List interesting indices:
-                        neat = corV.index[np.abs(corV) > 0.2]
+                        # List interesting indices, in order of interestingness:
+                        corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
+                        neat = corVs.index[np.abs(corVs) > 0.25]
+                        
                         neat = neat[1:-1] # Don't need to see self-correlation of 1
                         # This is too buggy:
                         #df.plot(x = 'AVM volts', kind = 'scatter', subplots = True)
@@ -953,7 +955,8 @@ class CoronaBrowser(tk.Frame):
                         axsf = axs.flat
                         counter = 0
                         for y in neat:
-                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], title = f'{y}, corr = {corV.loc[y]:.2f}', s=0.01, c='black')
+                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], s=0.01, c='black', label=f'corr = {corV.loc[y]:.2f}')
+                                axsf[counter].legend()
                                 counter += 1
 
 root = tk.Tk()
