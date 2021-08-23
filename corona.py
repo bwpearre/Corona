@@ -11,6 +11,7 @@ from numpy import mat # matrix
 from numpy.linalg import inv
 from scipy import signal
 from scipy.fft import fftshift
+from scipy.stats import linregress
 import math
 import time
 import pdb
@@ -90,7 +91,7 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                self.loadFile(filename='data/20310992_9.csv')
+                self.loadFile(filename='data/20310992_22.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -241,6 +242,7 @@ class CoronaBrowser(tk.Frame):
 
                         self.applyCorrections()
                         self.loadWHOI(self.times)
+                        self.doStatistics()
                 
                         
                         self.saveButton['state'] = 'normal'
@@ -722,12 +724,14 @@ class CoronaBrowser(tk.Frame):
                                                 print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
+                print(f'After ROUND 2: dataset is {self.whoi.shape}')
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
                 print('Interpolating 20-minute to 10-minute data...')
                 self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
 
+                
                 #self.legends = [[] for x in range(len(self.plots))]
                 #self.z = [[] for x in range(len(self.plots))]
 
@@ -806,7 +810,7 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
                 fig.clf()
 
-                nsubplots_base = 2
+                nsubplots_base = 1
                 nsubplots = nsubplots_base + self.whoi_graphs
                 
                 plt.subplot(nsubplots, 1, 1)
@@ -868,21 +872,22 @@ class CoronaBrowser(tk.Frame):
                 axes[0].set_ylim(vr)
 
                 # Spectrogram:
-                axes.append(plt.subplot(nsubplots, 1, 2, sharex = axes[0]))
-                
-                winlen = 128
-                noverlap = int(winlen / 2)
-                spectimes = times[noverlap::noverlap]
-                f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=noverlap, window=signal.windows.tukey(winlen), mode='magnitude')
-                spectimes = spectimes[0:Sxx.shape[1]]
+                if False:
+                        axes.append(plt.subplot(nsubplots, 1, 2, sharex = axes[0]))
 
-                # Scale the spectrogram data for better visibility
-                #Sxx = np.log(Sxx)
-                Sxx = np.sqrt(Sxx)
+                        winlen = 128
+                        noverlap = int(winlen / 2)
+                        spectimes = times[noverlap::noverlap]
+                        f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=noverlap, window=signal.windows.tukey(winlen), mode='magnitude')
+                        spectimes = spectimes[0:Sxx.shape[1]]
 
-                axes[1].pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
-                axes[1].set_ylabel('Frequency [Hz]')
-                axes[1].set_xlabel('Time')
+                        # Scale the spectrogram data for better visibility
+                        #Sxx = np.log(Sxx)
+                        Sxx = np.sqrt(Sxx)
+
+                        axes[1].pcolormesh(*np.meshgrid(spectimes, f), Sxx, shading='gouraud', cmap='hot')
+                        axes[1].set_ylabel('Frequency [Hz]')
+                        axes[1].set_xlabel('Time')
 
                 ###### WHOI data: ######
                 if self.whoi_graphs:
@@ -916,10 +921,14 @@ class CoronaBrowser(tk.Frame):
     
 
         def doStatistics(self):
+                corr_interesting_threshold = 0.3
+                
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
                 # Downsample onto the WHOI data's timestamps:
                 df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).std()
+                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).max()
+                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
                 
                 #self.whoi = self.whoi.join(df)
                 
@@ -943,21 +952,26 @@ class CoronaBrowser(tk.Frame):
                 if True:
                         # List interesting indices, in order of interestingness:
                         corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
-                        neat = corVs.index[np.abs(corVs) > 0.25]
+                        neat = corVs.index[np.abs(corVs) > corr_interesting_threshold]
                         
-                        neat = neat[1:-1] # Don't need to see self-correlation of 1
+                        neat = neat[1:] # Don't need to see self-correlation of 1
+
                         # This is too buggy:
                         #df.plot(x = 'AVM volts', kind = 'scatter', subplots = True)
-                        
-                        n = int(np.ceil(np.sqrt(neat.size)))
-                        m = int(np.ceil(neat.size / n))
-                        fig, axs = plt.subplots(n, m)
-                        axsf = axs.flat
-                        counter = 0
-                        for y in neat:
-                                df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], s=0.01, c='black', label=f'corr = {corV.loc[y]:.2f}')
-                                axsf[counter].legend()
-                                counter += 1
+
+                        if neat.size:
+                                n = int(np.ceil(np.sqrt(neat.size)))
+                                m = int(np.ceil(neat.size / n))
+                                fig, axs = plt.subplots(n, m)
+                                axsf = axs.flat
+                                counter = 0
+                                for y in neat:
+                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[:,'AVM volts'], df.loc[:,y])
+                                        df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
+                                        axsf[counter].legend()
+                                        counter += 1
+                        else:
+                                print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
 
 root = tk.Tk()
 root.geometry('+0-0')
