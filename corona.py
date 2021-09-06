@@ -359,8 +359,8 @@ class CoronaBrowser(tk.Frame):
                 sampleY_old_exp = exponential(sampleX_nl, *self.fit_exp)
 
                 self.waitbar_indeterminate_start('Plotting regressions...')
-                plt.figure(2, figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
-                plt.clf();
+                plt.figure(num='temperature correction', figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
+                plt.clf()
                 plt.subplot(1, 3, 1)
                 plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
@@ -807,7 +807,7 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_timeseries(self, times, volts, temps=[], events=[]):
 
-                fig = plt.figure(1, figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
+                fig = plt.figure(num='timeseries', figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
                 fig.clf()
 
                 nsubplots_base = 1
@@ -921,7 +921,8 @@ class CoronaBrowser(tk.Frame):
     
 
         def doStatistics(self):
-                corr_interesting_threshold = 0.3
+                corr_interesting_threshold = 0.35 # Show all correlations above a threshold
+                corr_interesting_n = 4 # Show the n most interesting
                 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
@@ -952,23 +953,29 @@ class CoronaBrowser(tk.Frame):
                 if True:
                         # List interesting indices, in order of interestingness:
                         corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
-                        neat = corVs.index[np.abs(corVs) > corr_interesting_threshold]
-                        
-                        neat = neat[1:] # Don't need to see self-correlation of 1
+
+                        # Show ones above the threshold?
+                        interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]
+                        interesting = interesting[1:] # Don't need to see self-correlation of 1
+                        # ...or show top n? Comment out the line below to use above.
+                        interesting = corVs.index[range(1, corr_interesting_n+1)]
 
                         # This is too buggy:
                         #df.plot(x = 'AVM volts', kind = 'scatter', subplots = True)
 
-                        if neat.size:
-                                n = int(np.ceil(np.sqrt(neat.size)))
-                                m = int(np.ceil(neat.size / n))
-                                fig, axs = plt.subplots(n, m)
-                                axsf = axs.flat
-                                counter = 0
-                                for y in neat:
+                        if interesting.size:
+                                n = int(np.ceil(np.sqrt(interesting.size)))
+                                m = int(np.ceil(interesting.size / n))
+                                plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.5))
+                                plt.clf()
+                                #fig, axs = plt.subplots(n, m)
+                                #axsf = axs.flat
+                                counter = 1
+                                for y in interesting:
                                         slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[:,'AVM volts'], df.loc[:,y])
-                                        df.plot.scatter(x = 'AVM volts', y = y, ax = axsf[counter], s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
-                                        axsf[counter].legend()
+                                        ax = plt.subplot(n, m, counter)
+                                        df.plot.scatter(x = 'AVM volts', y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
+                                        #axsf[counter].legend()
                                         counter += 1
                         else:
                                 print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
