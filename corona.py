@@ -25,6 +25,7 @@ import re
 import warnings
 import pandas as pd
 import pytz
+from tensorflow import keras
 
 
 # 20311011 is good
@@ -609,13 +610,15 @@ class CoronaBrowser(tk.Frame):
                                                         else:
                                                                 print('Could not get header size. Assuming 0.')
                                                                 headersize = 0
-                                                        mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
+                                                        mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
+                                                                          encoding='cp1252')
                                                         whoi_lidar_timezone = mdf.loc['timezone', 1]
                                                         # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                 if whoi_lidar_timezone != "UTC+0":
                                                         raise Exception('LIDAR time offset changed.')
 
-                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
+                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
+                                                                 encoding='cp1252')
 
                                                 if len(daily_data):
                                                         daily_data = daily_data.join(df, how='outer')
@@ -625,7 +628,8 @@ class CoronaBrowser(tk.Frame):
 
                                         else:
                                                 # No check for timezone/td is possible here. Just assume?! FIXME
-                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
+                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0,
+                                                                 encoding='cp1252')
                                                 newcolumns = []
 
                                                 # The column header is 2 rows deep: measurement and units. Also, there's
@@ -695,7 +699,8 @@ class CoronaBrowser(tk.Frame):
                                                 if whoi_lidar_timezone != "UTC+0":
                                                         raise Exception('LIDAR time offset changed.')
 
-                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0)
+                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
+                                                                 encoding='cp1252')
 
                                                 self.whoi.update(df)
 
@@ -754,7 +759,11 @@ class CoronaBrowser(tk.Frame):
                                 self.whoi_graphs += 1
 
                 self.waitbar_done()
-    
+
+        def learn_filter(self):
+                n_avm_samples = 100
+                
+                
         def find_events(self, times, volts):
                 events = Events()
                 # Temperature data mean we're using the atmospheric voltage monitor. Don't hilight events.
