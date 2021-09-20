@@ -25,7 +25,9 @@ import re
 import warnings
 import pandas as pd
 import pytz
+import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 
 
 # 20311011 is good
@@ -92,7 +94,7 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                self.loadFile(filename='data/20310992_22.csv')
+                self.loadFile(filename='data/20310992-2021-08.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -760,8 +762,69 @@ class CoronaBrowser(tk.Frame):
 
                 self.waitbar_done()
 
+                self.learn_filter()
+
+
+        def slice_frame(self, pattern, df):
+                r = []
+                for i,t in enumerate(df.columns):
+                        #print(f' Looking at column {i} : {t}')
+                        if pattern in t:
+                                #print('   ...found')
+                                #pdb.set_trace()
+                                r.append(t)
+                return r
+                
+
         def learn_filter(self):
-                n_avm_samples = 100
+                n_avm = 120
+                n_filters = 10
+                filter_size = 10
+                pool_size = 2
+
+                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
+                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                # Upsample WHOI LIDAR z-wind:
+
+                lidarz = self.whoi.loc[:, self.slice_frame('Z-wind (m/s)', self.whoi)]
+
+                df2 = lidarz.max(axis='columns').rename('Z-wind')
+                df3 = df.join(df2, how='outer')
+                df4 = df3.interpolate(method='linear', limit_direction='both')
+
+
+                generator = TimeseriesGenerator(df4.loc[:,'AVM volts'], df4.loc[:,'Z-wind'],
+                                                length = n_avm, shuffle = True)
+
+                model = tf.keras.models.Sequential()
+                #model.add(tf.keras.layers.Reshape((n_avm,1), input_shape=(n_avm,)))
+                model.add(tf.keras.Input(shape=(n_avm,)))
+                #model.add(tf.keras.layers.Conv1D(n_filters, filter_size, activation='relu', padding='same',input_shape=(n_avm,)))
+                #model.add(tf.keras.layers.Conv1D(n_filters, filter_size, activation='relu'))
+                #model.add(tf.keras.layers.MaxPooling1D(pool_size))
+                model.add(tf.keras.layers.Dense(100,activation='relu'))
+                model.add(tf.keras.layers.Dense(5,activation='relu'))
+                model.add(tf.keras.layers.Dense(1))
+
+                loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=False)
+                adam = tf.keras.optimizers.Adam(lr=0.001, learning_rate=0.001, beta_1=0.9, beta_2=0.999,
+                                                epsilon=1e-07, amsgrad=False,name='adam')
+                model.compile(optimizer='adam',
+                              loss=loss_fn,
+                              metrics=['accuracy'])
+
+
+                model.fit(generator)
+
+
+                gen2 = TimeseriesGenerator(df4.loc[:,'AVM volts'], df4.loc[:,'Z-wind'],
+                                                length = n_avm, shuffle = False)
+                #model.predict(df4.loc[0:n_avm, 'AVM volts'])
+                x,y = gen2[0]
+                p = model.predict(x)
+                pdb.set_trace()
+                
+
                 
                 
         def find_events(self, times, volts):
