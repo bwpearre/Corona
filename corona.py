@@ -789,42 +789,43 @@ class CoronaBrowser(tk.Frame):
                 lidarz = self.whoi.loc[:, self.slice_frame('Z-wind (m/s)', self.whoi)]
 
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
-                df3 = df.join(df2, how='outer')
-                df4 = df3.interpolate(method='linear', limit_direction='both')
+                #df3 = df.join(df2, how='outer')
+                df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
+                df3 = df3.interpolate(method='linear', limit_direction='both')
 
-
-                generator = TimeseriesGenerator(df4.loc[:,'AVM volts'], df4.loc[:,'Z-wind'],
+                #df3.fillna(MASK, inplace=True)
+                generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
                                                 length = n_avm, shuffle = True)
 
                 model = tf.keras.models.Sequential()
-                #model.add(tf.keras.layers.Reshape((n_avm,1), input_shape=(n_avm,)))
-                model.add(tf.keras.Input(shape=(n_avm,)))
-                #model.add(tf.keras.layers.Conv1D(n_filters, filter_size, activation='relu', padding='same',input_shape=(n_avm,)))
+                #model.add(tf.keras.Input(shape=(n_avm,1)))
+                #model.add(tf.keras.layers.Masking(mask_value=MASK, input_shape=(n_avm,)))
+                model.add(tf.keras.layers.Reshape((120, 1)))
+                model.add(tf.keras.layers.Conv1D(n_filters, filter_size, strides=1, activation='relu'))
+                #model.add(tf.keras.layers.MaxPooling1D(pool_size, input_shape=(n_avm,1)))
                 #model.add(tf.keras.layers.Conv1D(n_filters, filter_size, activation='relu'))
-                #model.add(tf.keras.layers.MaxPooling1D(pool_size))
-                model.add(tf.keras.layers.Dense(100,activation='relu'))
-                model.add(tf.keras.layers.Dense(5,activation='relu'))
+                model.add(tf.keras.layers.Dense(10, activation='relu'))
                 model.add(tf.keras.layers.Dense(1))
 
-                loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=False)
+                loss_fn = tf.keras.losses.MeanSquaredError()
                 adam = tf.keras.optimizers.Adam(lr=0.001, learning_rate=0.001, beta_1=0.9, beta_2=0.999,
                                                 epsilon=1e-07, amsgrad=False,name='adam')
                 model.compile(optimizer='adam',
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-
                 model.fit(generator)
 
-
-                gen2 = TimeseriesGenerator(df4.loc[:,'AVM volts'], df4.loc[:,'Z-wind'],
-                                                length = n_avm, shuffle = False)
-                #model.predict(df4.loc[0:n_avm, 'AVM volts'])
-                x,y = gen2[0]
-                p = model.predict(x)
-                pdb.set_trace()
+                print(model.summary())
                 
-
+                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = n_avm, batch_size = len(self.volts), shuffle = False)
+                x,y = gen2[0]
+                self.y_prediction = np.full((n_avm, 1), np.NaN)
+                self.y_prediction = np.append(self.y_prediction, model.predict(x))
+                self.model = model
+                plt.figure('prediction')
+                plt.plot(self.times, self.y_prediction)
+                pdb.set_trace()
                 
                 
         def find_events(self, times, volts):
@@ -988,6 +989,7 @@ class CoronaBrowser(tk.Frame):
                                 n += 1
                 
                 axes[0].set_title(self.datafile.stem)
+                axes[1].plot(self.times, self.y_prediction)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
     
