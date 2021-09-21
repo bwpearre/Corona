@@ -58,7 +58,7 @@ class CoronaBrowser(tk.Frame):
                 pd.set_option('display.max_rows', None)
                 pd.set_option('display.max_columns', None)
                 pd.set_option('display.width', None)
-                pd.set_option('display.max_colwidth', -1)
+                pd.set_option('display.max_colwidth', None)
                 
                 # matplotlib wants to size windows in inches. Find out the screen size in inches:
                 self.screendims_inches = [self.winfo_screenmmwidth(), self.winfo_screenmmheight()]
@@ -86,7 +86,9 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)')
+
+                #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
 
                 self.debug_seq()
@@ -94,7 +96,7 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
-                self.loadFile(filename='data/20310992-2021-08.csv')
+                self.loadFile(filename='data/20310992-2021-05+06.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -154,6 +156,8 @@ class CoronaBrowser(tk.Frame):
                 row += 1
                 self.doStatisticsButton = tk.Button(self, text='Statistics', command=self.doStatistics, state='disabled')
                 self.doStatisticsButton.grid(row=row, column=0)
+                self.doTrainButton = tk.Button(self, text='Train z-wind predictor', command=self.trainPredictor, state='disabled')
+                self.doTrainButton.grid(row=row, column=1)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=row, column=0, columnspan=5)
@@ -245,7 +249,7 @@ class CoronaBrowser(tk.Frame):
 
                         self.applyCorrections()
                         self.loadWHOI(self.times)
-                        self.doStatistics()
+                        #self.doStatistics()
                 
                         
                         self.saveButton['state'] = 'normal'
@@ -761,8 +765,7 @@ class CoronaBrowser(tk.Frame):
                                 self.whoi_graphs += 1
 
                 self.waitbar_done()
-
-                self.learn_filter()
+                self.doTrainButton['state'] = 'normal'
 
 
         def slice_frame(self, pattern, df):
@@ -776,11 +779,9 @@ class CoronaBrowser(tk.Frame):
                 return r
                 
 
-        def learn_filter(self):
-                n_avm = 120
-                n_filters = 10
-                filter_size = 10
-                pool_size = 2
+        def trainPredictor(self):
+                self.n_avm_samples = 300
+                batch_size = 128
 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
@@ -795,21 +796,21 @@ class CoronaBrowser(tk.Frame):
 
                 #df3.fillna(MASK, inplace=True)
                 generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
-                                                length = n_avm, shuffle = True)
+                                                length = self.n_avm_samples, shuffle = True, batch_size=batch_size)
 
                 model = tf.keras.models.Sequential()
-                #model.add(tf.keras.Input(shape=(n_avm,1)))
-                #model.add(tf.keras.layers.Masking(mask_value=MASK, input_shape=(n_avm,)))
-                model.add(tf.keras.layers.Reshape((120, 1)))
-                model.add(tf.keras.layers.Conv1D(n_filters, filter_size, strides=1, activation='relu'))
-                #model.add(tf.keras.layers.MaxPooling1D(pool_size, input_shape=(n_avm,1)))
-                #model.add(tf.keras.layers.Conv1D(n_filters, filter_size, activation='relu'))
-                model.add(tf.keras.layers.Dense(10, activation='relu'))
-                model.add(tf.keras.layers.Dense(1))
+                model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
+                model.add(tf.keras.layers.Conv1D(10, 10, strides=1, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Flatten())
+                model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
 
                 loss_fn = tf.keras.losses.MeanSquaredError()
-                adam = tf.keras.optimizers.Adam(lr=0.001, learning_rate=0.001, beta_1=0.9, beta_2=0.999,
-                                                epsilon=1e-07, amsgrad=False,name='adam')
+                adam = tf.keras.optimizers.Adam(learning_rate=0.05, epsilon=1e-09, name='adam')
                 model.compile(optimizer='adam',
                               loss=loss_fn,
                               metrics=['accuracy'])
@@ -817,16 +818,35 @@ class CoronaBrowser(tk.Frame):
                 model.fit(generator)
 
                 print(model.summary())
-                
-                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = n_avm, batch_size = len(self.volts), shuffle = False)
-                x,y = gen2[0]
-                self.y_prediction = np.full((n_avm, 1), np.NaN)
-                self.y_prediction = np.append(self.y_prediction, model.predict(x))
                 self.model = model
-                plt.figure('prediction')
-                plt.plot(self.times, self.y_prediction)
-                pdb.set_trace()
+                self.runPredictor()
+
+
+        def runPredictor(self):
+                if not hasattr(self, 'model'):
+                        self.waitbar_label['text'] = 'No model found.'
+                        return
                 
+                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
+                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                # Upsample WHOI LIDAR z-wind:
+
+                lidarz = self.whoi.loc[:, self.slice_frame('Z-wind (m/s)', self.whoi)]
+
+                df2 = lidarz.max(axis='columns').rename('Z-wind')
+                df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
+                df3 = df3.interpolate(method='linear', limit_direction='both')
+
+                print(self.model.summary())
+                
+                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(self.volts), shuffle = False)
+                x, y = gen2[0]
+                self.y_prediction = np.full((self.n_avm_samples, 1), np.NaN)
+                self.y_prediction = np.append(self.y_prediction, self.model.predict(x))
+
+                fig = plt.figure(num = 'timeseries')
+                fig.axes[1].plot(self.times, self.y_prediction + 2, color='red')
+
                 
         def find_events(self, times, volts):
                 events = Events()
@@ -880,7 +900,7 @@ class CoronaBrowser(tk.Frame):
         # Plot voltage vs time using Matplotlib
         def plot_timeseries(self, times, volts, temps=[], events=[]):
 
-                fig = plt.figure(num='timeseries', figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.9))
+                fig = plt.figure(num='timeseries', figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.7))
                 fig.clf()
 
                 nsubplots_base = 1
@@ -989,9 +1009,13 @@ class CoronaBrowser(tk.Frame):
                                 n += 1
                 
                 axes[0].set_title(self.datafile.stem)
-                axes[1].plot(self.times, self.y_prediction)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
+
+                if not hasattr(self, 'model'):
+                        self.trainPredictor()
+                
+                self.runPredictor()
     
 
         def doStatistics(self):
@@ -1054,10 +1078,22 @@ class CoronaBrowser(tk.Frame):
                         else:
                                 print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
 
-root = tk.Tk()
-root.geometry('+0-0')
-cor = CoronaBrowser(master = root)
-cor.master.title('Atmospheric Voltage Browser')
+
+# Set growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+        try:
+                # Currently, memory growth needs to be the same across GPUs
+                for gpu in gpus:
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+                        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+                # Memory growth must be set before GPUs have been initialized
+                print(e)
+else:
+        print('NO GPUS')
+
 
 # Actually print stuff when I ask:
 np.set_printoptions(threshold=np.inf)
@@ -1065,6 +1101,11 @@ pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
 pd.set_option('display.max_colwidth', None)
+
+root = tk.Tk()
+root.geometry('+0-0')
+cor = CoronaBrowser(master = root)
+cor.master.title('Atmospheric Voltage Browser')
 
 #try:
 cor.mainloop()
