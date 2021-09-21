@@ -86,7 +86,7 @@ class CoronaBrowser(tk.Frame):
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)')
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)') # BUG if there's only one, so need 2 until fixed.
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
@@ -96,6 +96,7 @@ class CoronaBrowser(tk.Frame):
 
         def debug_seq(self):
                 self.no_temperature_correction_check = True
+                #self.model = tf.keras.models.load_model('model')
                 self.loadFile(filename='data/20310992-2021-05+06.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
@@ -741,7 +742,7 @@ class CoronaBrowser(tk.Frame):
                 self.z = {p:[] for p in self.plots}
                 print('Interpolating 20-minute to 10-minute data...')
                 self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
-
+                
                 
                 #self.legends = [[] for x in range(len(self.plots))]
                 #self.z = [[] for x in range(len(self.plots))]
@@ -780,6 +781,7 @@ class CoronaBrowser(tk.Frame):
                 
 
         def trainPredictor(self):
+                print('Training predictor...')
                 self.n_avm_samples = 300
                 batch_size = 128
 
@@ -800,25 +802,28 @@ class CoronaBrowser(tk.Frame):
 
                 model = tf.keras.models.Sequential()
                 model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
-                model.add(tf.keras.layers.Conv1D(10, 10, strides=1, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(40, 5, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(20, 10, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
+                model.add(tf.keras.layers.Dense(3, activation='sigmoid'))
                 model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Flatten())
-                model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+                model.add(tf.keras.layers.Dense(1)) # linear output
 
                 loss_fn = tf.keras.losses.MeanSquaredError()
-                adam = tf.keras.optimizers.Adam(learning_rate=0.05, epsilon=1e-09, name='adam')
+                adam = tf.keras.optimizers.Adam(learning_rate=0.1, name='adam')
                 model.compile(optimizer='adam',
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator)
+                model.fit(generator, workers=6, epochs=10)
 
-                print(model.summary())
                 self.model = model
+                model.save('model')
+                
                 self.runPredictor()
 
 
@@ -826,7 +831,11 @@ class CoronaBrowser(tk.Frame):
                 if not hasattr(self, 'model'):
                         self.waitbar_label['text'] = 'No model found.'
                         return
+
+                print('Running trained predictor...')
                 
+                self.n_avm_samples = self.model.layers[0].output_shape[1]
+
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
                 # Upsample WHOI LIDAR z-wind:
@@ -841,11 +850,11 @@ class CoronaBrowser(tk.Frame):
                 
                 gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(self.volts), shuffle = False)
                 x, y = gen2[0]
-                self.y_prediction = np.full((self.n_avm_samples, 1), np.NaN)
-                self.y_prediction = np.append(self.y_prediction, self.model.predict(x))
+                self.z_predicted = np.full((self.n_avm_samples, 1), np.NaN)
+                self.z_predicted = np.append(self.z_predicted, self.model.predict(x))
 
                 fig = plt.figure(num = 'timeseries')
-                fig.axes[1].plot(self.times, self.y_prediction + 2, color='red')
+                fig.axes[1].plot(self.times, self.z_predicted + 2, color='red')
 
                 
         def find_events(self, times, volts):
@@ -999,8 +1008,9 @@ class CoronaBrowser(tk.Frame):
                                         zz = np.fromiter(z, dtype=float)
                                         colours = plt.get_cmap('viridis')(X=zz)
                                         colour = 0
-
+                                        
                                         for i in [self.legends[toplot][x] for x in order]:
+                                                #print(f' axes {n}, order {i}')
                                                 axes[n].plot(self.whoi.index, self.whoi[i],
                                                              label=i, color=colours[colour])
                                                 colour += 1
@@ -1020,13 +1030,17 @@ class CoronaBrowser(tk.Frame):
 
         def doStatistics(self):
                 corr_interesting_threshold = 0.35 # Show all correlations above a threshold
-                corr_interesting_n = 4 # Show the n most interesting
+                corr_interesting_n = 1 # Show the n most interesting
+
+                #key = 'AVM volts'
+                key = 'Predicted Z-wind'
                 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                #df = pd.DataFrame(data={key: self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                df = pd.DataFrame(data={key: self.z_predicted.squeeze()}, index=pd.DatetimeIndex(self.times))
                 # Downsample onto the WHOI data's timestamps:
-                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).std()
-                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).max()
+                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).std()
+                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).max()
                 #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
                 
                 #self.whoi = self.whoi.join(df)
@@ -1036,7 +1050,7 @@ class CoronaBrowser(tk.Frame):
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp)
                 cor = df.corr()
-                corV = cor.loc[:,'AVM volts']
+                corV = cor.loc[:,key]
 
                 # Show the full correlation matrix
                 if False:
@@ -1059,7 +1073,7 @@ class CoronaBrowser(tk.Frame):
                         interesting = corVs.index[range(1, corr_interesting_n+1)]
 
                         # This is too buggy:
-                        #df.plot(x = 'AVM volts', kind = 'scatter', subplots = True)
+                        #df.plot(x = key, kind = 'scatter', subplots = True)
 
                         if interesting.size:
                                 n = int(np.ceil(np.sqrt(interesting.size)))
@@ -1070,9 +1084,9 @@ class CoronaBrowser(tk.Frame):
                                 #axsf = axs.flat
                                 counter = 1
                                 for y in interesting:
-                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[:,'AVM volts'], df.loc[:,y])
+                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[:,key], df.loc[:,y])
                                         ax = plt.subplot(n, m, counter)
-                                        df.plot.scatter(x = 'AVM volts', y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
+                                        df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
                                         #axsf[counter].legend()
                                         counter += 1
                         else:
