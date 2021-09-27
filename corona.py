@@ -250,7 +250,12 @@ class CoronaBrowser(tk.Frame):
 
                         self.applyCorrections()
                         self.loadWHOI(self.times)
-                        #self.doStatistics()
+                        try:
+                                self.model = keras.models.load_model('model')
+                                print('Loaded last saved z-wind prediction model.')
+                                self.runPredictor()
+                        except:
+                                print('No z-wind prediction model found...')
                 
                         
                         self.saveButton['state'] = 'normal'
@@ -782,7 +787,7 @@ class CoronaBrowser(tk.Frame):
 
         def trainPredictor(self):
                 print('Training predictor...')
-                self.n_avm_samples = 300
+                self.n_avm_samples = 360
                 batch_size = 128
 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
@@ -802,13 +807,17 @@ class CoronaBrowser(tk.Frame):
 
                 model = tf.keras.models.Sequential()
                 model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
-                model.add(tf.keras.layers.Conv1D(40, 5, activation='relu'))
-                model.add(tf.keras.layers.Conv1D(20, 10, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
-                model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
+                #model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(15, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
-                model.add(tf.keras.layers.Conv1D(10, 10, activation='relu'))
-                model.add(tf.keras.layers.Dense(3, activation='sigmoid'))
+                #model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                model.add(tf.keras.layers.Dense(7, activation='sigmoid'))
                 model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Flatten())
                 model.add(tf.keras.layers.Dense(1)) # linear output
@@ -819,7 +828,7 @@ class CoronaBrowser(tk.Frame):
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator, workers=6, epochs=10)
+                model.fit(generator, workers=6, epochs=100)
 
                 self.model = model
                 model.save('model')
@@ -856,6 +865,8 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(num = 'timeseries')
                 fig.axes[1].plot(self.times, self.z_predicted + 2, color='red')
 
+                self.doStatistics()
+                
                 
         def find_events(self, times, volts):
                 events = Events()
@@ -1078,15 +1089,16 @@ class CoronaBrowser(tk.Frame):
                         if interesting.size:
                                 n = int(np.ceil(np.sqrt(interesting.size)))
                                 m = int(np.ceil(interesting.size / n))
-                                plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.5))
+                                plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.3, self.screendims_inches[1]*0.3))
                                 plt.clf()
                                 #fig, axs = plt.subplots(n, m)
                                 #axsf = axs.flat
                                 counter = 1
                                 for y in interesting:
-                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[:,key], df.loc[:,y])
+                                        mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
+                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key], df.loc[mask,y])
                                         ax = plt.subplot(n, m, counter)
-                                        df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, R^2={p_value:.2g}')
+                                        df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
                                         #axsf[counter].legend()
                                         counter += 1
                         else:
