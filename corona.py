@@ -30,8 +30,6 @@ from tensorflow import keras
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 
 
-# 20311011 is good
-
 def exponential(x, a, b, c):
         #return a + b * x + c * np.square(x)
         return a * np.exp(b*x) + c
@@ -97,7 +95,7 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                self.loadFile(filename='data/20310992-2021-05+06.csv')
+                self.loadFile(filename='data/20310992-2021-09.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -250,12 +248,13 @@ class CoronaBrowser(tk.Frame):
 
                         self.applyCorrections()
                         self.loadWHOI(self.times)
-                        try:
+                        #try:
+                        if True:
                                 self.model = keras.models.load_model('model')
                                 print('Loaded last saved z-wind prediction model.')
-                                self.runPredictor()
-                        except:
-                                print('No z-wind prediction model found...')
+
+                        #except:
+                        #        print('No z-wind prediction model found...')
                 
                         
                         self.saveButton['state'] = 'normal'
@@ -585,14 +584,16 @@ class CoronaBrowser(tk.Frame):
                 filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
                             'met': ['asit.mininode.CLRohn_', '.csv', False ],
                             'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
+                filesets = {'lidar': [ 'asit.lidar.', '.sta', True ]}
                 
                 dataframes = []
 
                 
                 # Okay, this is fucking stupid: I am going to read in
                 # everything, then purge duplicate rows, then read in
-                # everything AGAIN to fill in all the purged
-                # data. Thanks, Python.
+                # everything AGAIN to fill in all the purged data,
+                # because Python/Pandas doesn't seem to really have
+                # any mechanisms to do this more cleverly.
 
                 ### ROUND 1 ###
                 
@@ -668,8 +669,10 @@ class CoronaBrowser(tk.Frame):
                                                 print('  [[ Not finding WHOI data files. Giving up. ]]')
                                                 return
 
-                        dataframes.append(daily_data)
-                        
+                        if len(daily_data):
+                                dataframes.append(daily_data)
+
+                print(f'type of dataframes: {type(dataframes)}, length {len(dataframes)}')
                 self.whoi = pd.concat(dataframes, copy=False)
                 print(f'Before dropping duplicates: dataset is {self.whoi.shape}')
                 self.whoi.sort_index(inplace=True, kind='mergesort')
@@ -809,10 +812,10 @@ class CoronaBrowser(tk.Frame):
                 model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
                 model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
-                #model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Conv1D(15, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
-                #model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Dropout(0.5))
@@ -828,7 +831,7 @@ class CoronaBrowser(tk.Frame):
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator, workers=6, epochs=100)
+                model.fit(generator, workers=12, epochs=100)
 
                 self.model = model
                 model.save('model')
@@ -837,6 +840,7 @@ class CoronaBrowser(tk.Frame):
 
 
         def runPredictor(self):
+                print('Entered runPredictor()')
                 if not hasattr(self, 'model'):
                         self.waitbar_label['text'] = 'No model found.'
                         return
@@ -856,12 +860,15 @@ class CoronaBrowser(tk.Frame):
                 df3 = df3.interpolate(method='linear', limit_direction='both')
 
                 print(self.model.summary())
-                
+
+                print('Generating timeseries...')
                 gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(self.volts), shuffle = False)
                 x, y = gen2[0]
                 self.z_predicted = np.full((self.n_avm_samples, 1), np.NaN)
+                print('Running the model...')
                 self.z_predicted = np.append(self.z_predicted, self.model.predict(x))
-
+ 
+                print('Plotting...')
                 fig = plt.figure(num = 'timeseries')
                 fig.axes[1].plot(self.times, self.z_predicted + 2, color='red')
 
