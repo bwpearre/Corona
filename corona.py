@@ -95,7 +95,8 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                self.loadFile(filename='data/20310992-2021-09.csv')
+                #self.loadFile(filename='data/20310992-2021-09.csv')
+                self.loadFile(filename='data/20311010-2021-10.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -581,10 +582,10 @@ class CoronaBrowser(tk.Frame):
                 #             'wind': ['met.Anemo_', '.csv', False ]}
 
                 # Here are the files. A hassle since a Dict isn't ordered.
-                filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
-                            'met': ['asit.mininode.CLRohn_', '.csv', False ],
-                            'wind': ['asit.mininode.Sonic1_', '.csv', False ]}
-                filesets = {'lidar': [ 'asit.lidar.', '.sta', True ]}
+                #filesets = {'lidar': [[ 'asit.lidar.', '.sta', 1 ]],
+                #            'met': [['asit.mininode.CLRohn_', '.csv', 0 ]],
+                #            'wind': [['asit.mininode.Sonic1_', '.csv', 0 ]]}
+                filesets = { 'lidar': [[ 'asit.ZXlidar.', '.CSV', 2], [ 'asit.lidar.', '.sta', 1 ]]}
                 
                 dataframes = []
 
@@ -610,8 +611,20 @@ class CoronaBrowser(tk.Frame):
                         daily_data = []
 
                         for fileset, prepost in filesets.items():
-                                fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
-                                #print(f'      Loading {fname}')
+                                fname = self.datafile.parent
+
+                                # Due to WHOI changing the LIDAR
+                                # around 2021-10-01, need to jump
+                                # through hoops to find the correct
+                                # file.
+                                for i in range(len(prepost)):
+                                        fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[i][0]}{fnum}{prepost[i][1]}'
+                                        if fname.is_file:
+                                                # we've got a promising filename
+                                                print(f'Confirmed file {fname}')
+                                                break
+
+                                print(f'      Loading {fname}')
 
                                 if fname.is_file():
                                         if fileset == 'lidar':
@@ -619,19 +632,25 @@ class CoronaBrowser(tk.Frame):
                                                 with open(fname, errors='replace') as f:
                                                         row = f.readline()
                                                         if row[0:9] == 'HeaderSize'[0:9]:
+                                                                print('Eeeew, the old LIDAR.')
                                                                 headersize = int(row.split('=')[1])
+                                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
+                                                                                  encoding='cp1252')
+                                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                                                if whoi_lidar_timezone != "UTC+0":
+                                                                        raise Exception('LIDAR time offset changed.')
+
+                                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
+                                                                                 encoding='cp1252')
+                                                        elif row[0:9] == 'CSV Converter'[0:9]:
+                                                                print('Aaaah, the new LIDAR.')
+                                                                headersize = 1
+                                                                df = pd.read_csv(fname, index_col = 1, header = 1, encoding='cp1252')
+                                                                pdb.set_trace()
                                                         else:
                                                                 print('Could not get header size. Assuming 0.')
                                                                 headersize = 0
-                                                        mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
-                                                                          encoding='cp1252')
-                                                        whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                                        # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
-                                                if whoi_lidar_timezone != "UTC+0":
-                                                        raise Exception('LIDAR time offset changed.')
-
-                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
-                                                                 encoding='cp1252')
 
                                                 if len(daily_data):
                                                         daily_data = daily_data.join(df, how='outer')
