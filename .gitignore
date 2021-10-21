@@ -1,3 +1,6 @@
 corona.html
 *.hob
 *.hproj
+*.csv
+*~
+#*#
