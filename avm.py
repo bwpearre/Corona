@@ -210,8 +210,6 @@ class dataset:
                 lastfnum = times[-1].strftime("%Y_%j")
 
                 date_format_lidar = '%Y/%m/%d %H:%M'
-                
-                self.browser.waitbar_start('  Loading WHOI data...', (times[-1]-times[0]).days+1)
 
                 #print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
 
@@ -236,207 +234,150 @@ class dataset:
                 # because Python/Pandas doesn't seem to really have
                 # any mechanisms to do this more cleverly.
 
-                ### ROUND 1 ###
+                n_days = (times[-1]-times[0]).days+1
+                self.browser.waitbar_start('  Loading WHOI data...', n_days)
+
+
+                for round in {0, 1}:
                 
-                day_i = -1
-                fnum = ''
-                errors = 0
+                    day_i = -1
+                    fnum = ''
+                    errors = 0
 
-                print('***** REMEMBER TO UPDATE ROUND 2 *****')
-                
-                while fnum != lastfnum:
-                        day_i += 1
-                        self.browser.waitbar_update(day_i)
-                        fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
-                        print(f' Loading WHOI files {fnum}...')
+                    while fnum != lastfnum:
+                            day_i += 1
 
-                        daily_data = []
+                            # DIFFERENT between round 0 and round : waitbar goes to halfway:
+                            self.browser.waitbar_update(day_i/2 + round*n_days/2)
 
-                        for fileset, prepost in filesets.items():
-                                fname = self.datafile.parent
+                            fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
+                            print(f' Loading WHOI files {fnum} (round {round})...')
 
-                                # Due to WHOI changing the LIDAR
-                                # around 2021-10-01, need to jump
-                                # through hoops to find the correct
-                                # file.
-                                for i in range(len(prepost)):
-                                        fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[i][0]}{fnum}{prepost[i][1]}'
-                                        if fname.exists():
-                                                # we've got a promising filename
-                                                print(f'Confirmed file {fname}')
-                                                break
+                            daily_data = []
 
-                                print(f'      Loading {fname}')
+                            for fileset, prepost in filesets.items():
+                                    fname = self.datafile.parent
 
-                                if fname.is_file():
-                                        if fileset == 'lidar':
-                                                # Special code for WHOI's LIDAR files:
-                                                with open(fname, errors='replace') as f:
-                                                        row = f.readline()
-                                                        if row[0:9] == 'HeaderSize'[0:9]:
-                                                                print('Eeeew, the old LIDAR.')
-                                                                headersize = int(row.split('=')[1])
-                                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
-                                                                                  encoding='cp1252')
-                                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
-                                                                if whoi_lidar_timezone != "UTC+0":
-                                                                        raise Exception('LIDAR time offset changed.')
+                                    # Due to WHOI changing the LIDAR
+                                    # around 2021-10-01, need to jump
+                                    # through hoops to find the correct
+                                    # file.
+                                    for i in range(len(prepost)):
+                                            fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[i][0]}{fnum}{prepost[i][1]}'
+                                            if fname.exists():
+                                                    # we've got an extant filename
+                                                    break
 
-                                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
-                                                                                 encoding='cp1252')
-                                                                df = df.filter(like='Z-wind (m/s)')
-                                                                dfh = df.columns.tolist()
-                                                                heights = [int(i.split('m')[0]) for i in dfh]
-                                                                print(heights)
-                                                                column_rename = {}
-                                                                for height in heights:
-                                                                    column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
-                                                                print(column_rename)
+                                    print(f'      Loading {fname}')
 
-                                                        elif row[0:9] == 'CSV Converter'[0:9]:
-                                                                print('Aaaah, the new LIDAR. Add a timezone check sometime (it is in the header).')
-                                                                headersize = 1
-                                                                df = pd.read_csv(fname, index_col = 1, header = 1, encoding='cp1252')
-                                                                #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
-                                                                # Actually, let's just get rid of everything but what we care about:
-                                                                df = df.filter(like='Vertical Wind Speed')
-                                                                
-                                                                dfh = df.columns.tolist()
-                                                                h = [i.split(' ')[5] for i in dfh]
-                                                                heights = [int(i.split('m')[0]) for i in h]
-                                                                print(heights)
+                                    if fname.is_file():
+                                            if fileset == 'lidar':
+                                                    # Special code for WHOI's LIDAR files:
+                                                    with open(fname, errors='replace') as f:
+                                                            row = f.readline()
+                                                            if row[0:9] == 'HeaderSize'[0:9]:
+                                                                    print('Eeeew, the old LIDAR.')
+                                                                    headersize = int(row.split('=')[1])
+                                                                    mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
+                                                                                      encoding='cp1252')
+                                                                    whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                                    # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
+                                                                    if whoi_lidar_timezone != "UTC+0":
+                                                                            raise Exception('LIDAR time offset changed.')
 
-                                                                df.rename(inplace=True, columns=column_rename)
-                                                                print(df)
-                                                                
-                                                                pdb.set_trace()
-                                                        else:
-                                                                print('Could not get header size. Assuming 0.')
-                                                                headersize = 0
+                                                                    df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
+                                                                                     encoding='cp1252')
+                                                                    df = df.filter(like='Z-wind (m/s)')
+                                                                    dfh = df.columns.tolist()
+                                                                    heights = [int(i.split('m')[0]) for i in dfh]
 
-                                                if len(daily_data):
-                                                        daily_data = daily_data.join(df, how='outer')
-                                                else:
-                                                        daily_data = df
+                                                                    column_rename = {}
+                                                                    for height in heights:
+                                                                        column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
 
+                                                                    # Artisinal nearest-neighbour interpolation ;)
+                                                                    column_rename[f'Vertical Wind Speed (m/s) at 38m'] = f'40m Z-wind (m/s)'
 
-                                        else:
-                                                # No check for timezone/td is possible here. Just assume?! FIXME
-                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0,
-                                                                 encoding='cp1252')
-                                                newcolumns = []
+                                                            elif row[0:9] == 'CSV Converter'[0:9]:
+                                                                    print('Aaaah, the new LIDAR. Add a timezone check sometime (it is in the header).')
+                                                                    headersize = 1
+                                                                    df = pd.read_csv(fname, parse_dates = [1], index_col = 1, header = 1, encoding='cp1252')
+                                                                    #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
+                                                                    # Actually, let's just get rid of everything but what we care about:
+                                                                    df = df.filter(like='Vertical Wind Speed')
 
-                                                # The column header is 2 rows deep: measurement and units. Also, there's
-                                                # column-name overlap for the mean and std temperatures in 'met' and 'wind'
-                                                # filesets. Join and clean:
-                                                for i in df.columns:
-                                                        if i[0].startswith('temperature'):
-                                                                newcolumns.append(f'{i[0]} ({fileset}) ({i[1]})')
-                                                        else:
-                                                                newcolumns.append(f'{i[0]} ({i[1]})')
-                                                df.columns=newcolumns
-                                                                
+                                                                    dfh = df.columns.tolist()
+                                                                    h = [i.split(' ')[5] for i in dfh]
+                                                                    heights = [int(i.split('m')[0]) for i in h]
 
-                                                if len(daily_data):
-                                                        daily_data = daily_data.join(df, how='outer')
-                                                else:
-                                                        daily_data = df
+                                                                    df.rename(inplace=True, columns=column_rename)
+
+                                                            else:
+                                                                    print('Could not get header size. Assuming 0.')
+                                                                    headersize = 0
+
+                                                    # DIFFERENT between round 1 and round 2: don't add (possibly redundant) indices; just fill in missing values
+                                                    if round == 0:
+                                                            if len(daily_data): # Join lidar+met+wind
+                                                                    daily_data = daily_data.join(df, how='outer')
+                                                            else:
+                                                                    daily_data = df
+                                                    else:
+                                                            self.whoi.update(df)
 
 
-                                else:
-                                        print(f'  File "{fname}" does not exist.')
-                                        errors += 1
-                                        if errors >= 30:
-                                                print('  [[ Not finding WHOI data files. Giving up. ]]')
-                                                return
+                                            else:
+                                                    # No check for timezone/td is possible here. Just assume?! FIXME
+                                                    df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0,
+                                                                     encoding='cp1252')
+                                                    newcolumns = []
 
-                        if len(daily_data):
-                                dataframes.append(daily_data)
+                                                    # The column header is 2 rows deep: measurement and units. Also, there's
+                                                    # column-name overlap for the mean and std temperatures in 'met' and 'wind'
+                                                    # filesets. Join and clean:
+                                                    for i in df.columns:
+                                                            if i[0].startswith('temperature'):
+                                                                    newcolumns.append(f'{i[0]} ({fileset}) ({i[1]})')
+                                                            else:
+                                                                    newcolumns.append(f'{i[0]} ({i[1]})')
+                                                    df.columns = newcolumns
 
-                print(f'type of dataframes: {type(dataframes)}, length {len(dataframes)}')
-                self.whoi = pd.concat(dataframes, copy=False)
-                print(f'Before dropping duplicates: dataset is {self.whoi.shape}')
-                self.whoi.sort_index(inplace=True, kind='mergesort')
-                self.whoi = self.whoi[~self.whoi.index.duplicated(keep='first')] # FIXME: This will toss some rows that contain data. Fixed in ROUND 2.
-                self.whoi.dropna(inplace=True, axis='columns', how='all')
+                                                    if round == 0:
+                                                            if len(daily_data): # Join lidar+met+wind
+                                                                    daily_data = daily_data.join(df, how='outer')
+                                                            else:
+                                                                    daily_data = df
+                                                    else:
+                                                            self.whoi.update(df)
 
 
-                ### ROUND 2 ###
+                                    else:
+                                            print(f'  File "{fname}" does not exist.')
+                                            errors += 1
+                                            if errors >= 30:
+                                                    print('  [[ Not finding WHOI data files. Giving up. ]]')
+                                                    return
 
-                print(f'Before ROUND 2: dataset is {self.whoi.shape}')
-                
-                day_i = -1
-                fnum = ''
-                errors = 0
-                
-                while fnum != lastfnum:
-                        day_i += 1
-                        self.browser.waitbar_update(day_i)
-                        fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
-                        print(f' Loading WHOI files {fnum}...')
+                            if round == 0:
+                                if len(daily_data):
+                                        dataframes.append(daily_data)
 
-                        for fileset, prepost in filesets.items():
-                                fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[0]}{fnum}{prepost[1]}'
-                                #print(f'      Loading {fname}')
+                    if round == 0:
+                            self.whoi = pd.concat(dataframes, copy=False)
+                            print(f'Before dropping duplicates: dataset is {self.whoi.shape}')
+                            self.whoi.sort_index(inplace=True, kind='mergesort')
+                            self.whoi = self.whoi[~self.whoi.index.duplicated(keep='first')] # FIXME: This will toss some rows that contain data. Fixed in ROUND 1.
+                            self.whoi.dropna(inplace=True, axis='columns', how='all')
+                    print(f'After ROUND {round}: dataset is {self.whoi.shape}')
 
-                                if fname.is_file():
-                                        if fileset == 'lidar':
-                                                # Special code for WHOI's LIDAR files:
-                                                with open(fname, errors='replace') as f:
-                                                        row = f.readline()
-                                                        if row[0:9] == 'HeaderSize'[0:9]:
-                                                                headersize = int(row.split('=')[1])
-                                                        else:
-                                                                print('Could not get header size. Assuming 0.')
-                                                                headersize = 0
-                                                                mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None)
-                                                                whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                                                # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
-                                                if whoi_lidar_timezone != "UTC+0":
-                                                        raise Exception('LIDAR time offset changed.')
 
-                                                df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
-                                                                 encoding='cp1252')
-
-                                                self.whoi.update(df)
-
-                                        else:
-                                                # No check for timezone/td is possible here. Just assume?! FIXME
-                                                df = pd.read_csv(fname, sep=',', header=[0,1], parse_dates=[0], index_col=0)
-                                                newcolumns = []
-
-                                                # The column header is 2 rows deep: measurement and units. Also, there's
-                                                # column-name overlap for the mean and std temperatures in 'met' and 'wind'
-                                                # filesets. Join and clean:
-                                                for i in df.columns:
-                                                        if i[0].startswith('temperature'):
-                                                                newcolumns.append(f'{i[0]} ({fileset}) ({i[1]})')
-                                                        else:
-                                                                newcolumns.append(f'{i[0]} ({i[1]})')
-                                                df.columns=newcolumns
-                                                                
-                                                self.whoi.update(df)
-                                                
-
-                                else:
-                                        print(f'  File "{fname}" does not exist.')
-                                        errors += 1
-                                        if errors >= 30:
-                                                print('  [[ Not finding WHOI data files. Giving up. ]]')
-                                                return
-
-                print(f'After ROUND 2: dataset is {self.whoi.shape}')
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
                 print('Interpolating 20-minute to 10-minute data...')
                 self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
-                
-                
-                #self.legends = [[] for x in range(len(self.plots))]
-                #self.z = [[] for x in range(len(self.plots))]
-
+                        
+                # Build a list of things to plot:
                 for i,t in enumerate(self.whoi.columns):
                         #print(f' Looking at column {i} : {t}')
                         for toplot in self.plots:
@@ -455,8 +396,8 @@ class dataset:
                         if len(self.legends[toplot]):
                                 self.whoi_graphs += 1
 
-                #self.browser.waitbar_done()
-                #self.doTrainButton['state'] = 'normal'
+                self.browser.waitbar_done()
+                self.browser.doTrainButton['state'] = 'normal'
 
                 
         def applyCorrections(self):
