@@ -25,6 +25,7 @@ import re
 import warnings
 import pandas as pd
 import pytz
+import geopy.distance
 
 
 def exponential(x, a, b, c):
@@ -211,6 +212,10 @@ class dataset:
 
                 date_format_lidar = '%Y/%m/%d %H:%M'
 
+
+                # Convert new to old column names:
+                column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)'}
+
                 #print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
 
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
@@ -276,11 +281,18 @@ class dataset:
                                                     with open(fname, errors='replace') as f:
                                                             row = f.readline()
                                                             if row[0:9] == 'HeaderSize'[0:9]:
-                                                                    print('Eeeew, the old LIDAR.')
+                                                                    # Old LIDAR
                                                                     headersize = int(row.split('=')[1])
                                                                     mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
                                                                                       encoding='cp1252')
                                                                     whoi_lidar_timezone = mdf.loc['timezone', 1]
+                                                                    whoi_lidar_location = mdf.loc['Location', 1].strip()
+                                                                    whoi_lidar_latitude, whoi_lidar_longitude = self.whoi_lidar_old_latlon_parse(mdf.loc['GPS Location', 1])
+                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
+                                                                    print(f'            Location: {whoi_lidar_location}, {int(np.round(dist))} m from AVM')
+                                                                    if dist > 1000:
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist} m *****')
+                                                                    
                                                                     # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                                     if whoi_lidar_timezone != "UTC+0":
                                                                             raise Exception('LIDAR time offset changed.')
@@ -291,19 +303,28 @@ class dataset:
                                                                     dfh = df.columns.tolist()
                                                                     heights = [int(i.split('m')[0]) for i in dfh]
 
-                                                                    column_rename = {}
-                                                                    for height in heights:
-                                                                        column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
+                                                                    #column_rename = {}
+                                                                    #for height in heights:
+                                                                    #    column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
 
                                                                     # Artisinal nearest-neighbour interpolation ;)
-                                                                    column_rename[f'Vertical Wind Speed (m/s) at 38m'] = f'40m Z-wind (m/s)'
+                                                                    # column_rename[f'Vertical Wind Speed (m/s) at 38m'] = f'40m Z-wind (m/s)'
+                                                                    #print(column_rename)
 
                                                             elif row[0:9] == 'CSV Converter'[0:9]:
-                                                                    print('Aaaah, the new LIDAR. Add a timezone check sometime (it is in the header).')
+                                                                    # New LIDAR
                                                                     headersize = 1
                                                                     df = pd.read_csv(fname, parse_dates = [1], index_col = 1, header = 1, encoding='cp1252')
                                                                     #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
-                                                                    # Actually, let's just get rid of everything but what we care about:
+                                                                    # Actually, let's just get rid of everything but what we currently care about:
+                                                                    latlon = df['GPS'].iat[0].split()
+                                                                    whoi_lidar_latitude = float(latlon[0])
+                                                                    whoi_lidar_longitude = float(latlon[1])
+                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
+                                                                    print(f'            Location: {int(np.round(dist))} m from AVM')
+                                                                    if dist > 1000:
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist} m *****')
+
                                                                     df = df.filter(like='Vertical Wind Speed')
 
                                                                     dfh = df.columns.tolist()
@@ -466,3 +487,19 @@ class dataset:
 
                 
             
+        def whoi_lidar_old_latlon_parse(self, latlon):
+            ll = latlon.split(', ')
+            lat = ll[0].split(':')[1]
+            latd = lat[0:-1]
+            latns = lat[-1]
+            latitude = float(latd)
+            if latns.lower() == 's':
+                latitude = -latitude
+            lon = ll[1].split(':')[1]
+            lond = lon[0:-1]
+            lonew = lon[-1]
+            longitude = float(lond)
+            if lonew.lower() == 'w':
+                longitude = -longitude
+
+            return latitude, longitude
