@@ -32,9 +32,6 @@ from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 import avm
 
 
-def exponential(x, a, b, c):
-        #return a + b * x + c * np.square(x)
-        return a * np.exp(b*x) + c
 
 class Events:
         def __init__(self):
@@ -74,14 +71,6 @@ class CoronaBrowser(tk.Frame):
                 self.grid()
                 self.createWidgets()
 
-                # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
-                self.fit = mat([[-0.020992708021557917],
-                               [5.272377975649473]])
-                
-                # Dictionary is exponential fit params indexed on sensor serial number:
-                self.fits = {-1: (1.713, -0.07977, 4.493),
-                             20121725: (1.3545883156167038, -0.0714642458651333, 4.482818353894192),
-                             20310992: (0.28929039047675625, -0.08857734679045634, 4.447723485085831)}
                         
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
@@ -96,8 +85,8 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                #self.loadFile(filename='data/20310992-2021-09.csv')
-                self.loadFile(filename='data/20311010-2021-10.csv')
+                self.loadFile(filename='data/20310992-2021-09.csv')
+                #self.loadFile(filename='data/20311010-2021-10.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -181,7 +170,6 @@ class CoronaBrowser(tk.Frame):
                 self.temps = []
                 self.volts_scaled = []
                 self.whoi_graphs = 0
-                self.sensor_serial_number = -1
                 self.regressButton.grid_forget()
                 self.useNewRegressionButton.grid_forget()
 
@@ -249,8 +237,6 @@ class CoronaBrowser(tk.Frame):
                         else:
                                 self.event_detection_enabled(True)
 
-                        self.d_test.applyCorrections()
-                        self.d_test.loadWHOI(d.times)
                         #try:
                         if True:
                                 self.model = keras.models.load_model('model')
@@ -272,24 +258,6 @@ class CoronaBrowser(tk.Frame):
                 if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
                         
-
-        # Correct the voltage using self.fit for temperature
-        def applyTemperatureCorrection(self):
-                if not self.temperature_present:
-                        return self.volts_scaled
-
-                length = len(self.temps)
-                y = self.volts_scaled
-
-                # Seems like a good place to sort out the temperature correction:
-                if self.sensor_serial_number in self.fits:
-                        self.fit_exp = self.fits[self.sensor_serial_number]
-                else:
-                        print(f'*** UPDATE ***: No temperature calibration specifically for serial number {self.sensor_serial_number}.')
-                        self.fit_exp = self.fits[-1]
-                
-                volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
-                return volts
 
         # Show default and new regressions from voltage-vs-temperature
         def plot_temperature_corrections(self):

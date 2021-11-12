@@ -26,31 +26,58 @@ import warnings
 import pandas as pd
 import pytz
 
+
+def exponential(x, a, b, c):
+        #return a + b * x + c * np.square(x)
+        return a * np.exp(b*x) + c
+
+
 class dataset:
+
+    
         def __init__(self, browser, filename):
                 self.filename = filename
                 self.browser = browser
+                self.sensor_serial_number = np.NaN
                 
+                # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
+                self.fit = mat([[-0.020992708021557917],
+                               [5.272377975649473]])
+                
+                # Dictionary is exponential fit params indexed on sensor serial number:
+                self.fits = {-1: (1.713, -0.07977, 4.493),
+                             20121725: (1.3545883156167038, -0.0714642458651333, 4.482818353894192),
+                             20310992: (0.28929039047675625, -0.08857734679045634, 4.447723485085831)}
+
+
+
+
+
                 self.times, self.volts_raw, self.temps = self.loadFileBen(Path(filename))
 
-        # Faster loading. Note that Python grows lists sensibly, so
-        # repeated calls to append() aren't as inefficient as they
-        # look.
-        def loadFileBen(self, fname):
+                self.applyCorrections()
+                self.loadWHOI(self.times)
+
+
+                
+        # Much faster loading than pandas (is it really worth
+        # it?). Note that Python grows lists sensibly, so repeated
+        # calls to append() aren't as inefficient as they look.
+        def loadFileBen(self, filename):
             times = []
             volts = []
             temps = []
 
-            self.datafile = fname
+            self.datafile = filename
 
-            # Define the weird date format
+            # Define the weird date format, or perhaps the new date format that I'm hoping for...
             date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
                 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
-            print(f'----- Loading {fname} -----')
+            print(f'----- Loading {filename} -----')
             self.browser.waitbar_indeterminate_start('Checking file size...')
-            num_lines = sum(1 for line in open(fname))
+            num_lines = sum(1 for line in open(filename))
             self.browser.waitbar_indeterminate_done()
             # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
             self.browser.waitbar_start('Loading...', num_lines)
@@ -60,8 +87,9 @@ class dataset:
             voltage_column = -1
             scaled_column = -1
             temperature_in_freedom_units = False
+            still_in_header = True
 
-            with fname.open() as csv_file:
+            with filename.open() as csv_file:
                 csv_reader = csv.reader(csv_file)
                 line_count = 0
                 for row in csv_reader:
@@ -70,15 +98,25 @@ class dataset:
                         if line_count % 1000 == 0:
                                 self.browser.waitbar_update(line_count)
                         line_count += 1
-                        if line_count == 2:
+                        
+                        if still_in_header:
+                            foo = row[0].split('=')
+                            if 'location' in foo[0].lower():
+                                self.location = foo[1].strip()
+                            elif 'latitude' in foo[0].lower():
+                                self.latitude = float(foo[1])
+                            elif 'longitude' in foo[0].lower():
+                                self.longitude = float(foo[1])
+                            elif foo[0][0]=='#':
                                 # This is the line with all the header info. Figure out what we have...
+                                print(f'   Location = {self.location} at {self.latitude}, {self.longitude}')
                                 for column in range(1, len(row)):
                                         serialnumberfound = row[column].find("SEN S/N:")
                                         if serialnumberfound != -1:
                                                 sn = int(row[column][serialnumberfound:].split(":")[1].split(',')[0])
-                                                if self.sensor_serial_number == -1:
+                                                if np.isnan(self.sensor_serial_number):
                                                         print(f'      Found sensor serial number {sn}')
-                                                if self.sensor_serial_number == -1 or sn == self.sensor_serial_number:
+                                                if np.isnan(self.sensor_serial_number) or sn == self.sensor_serial_number:
                                                         self.sensor_serial_number = sn
                                                 else:
                                                         raise(f"Conflicting sensor serial numbers {sn} and {self.sensor_serial_number}")
@@ -119,11 +157,13 @@ class dataset:
                                 else:
                                         print('  Found Voltage, but not Scaled Series. Guessing that my internal scaling factor should be 1. Please verify.')
                                         self.setVoltageScalingFactor(1)
-                                        
 
+
+                                still_in_header = False
+                                
 
                         # Here's the meat. Read each line, check for completeness, parse the dates, and add.
-                        if line_count > 2:
+                        else: # still_in_header = False
                             if len(row) <= max([date_column, voltage_column, self.temperature_present]):
                                     print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
@@ -154,9 +194,9 @@ class dataset:
                     if temperature_in_freedom_units:
                             temps =(temps - 32) * 5/9
                             temperature_in_freedom_units = False # Unnecessary, but just in case...
-                            self.regressButton.grid(row=3, column=4)
-                            self.useNewRegressionButton.grid(row=3, column=5)
-                            self.useNewRegressionButton['state'] = 'disabled'
+                            self.browser.regressButton.grid(row=3, column=4)
+                            self.browser.useNewRegressionButton.grid(row=3, column=5)
+                            self.browser.useNewRegressionButton['state'] = 'disabled'
                             times = times[0:length]
                             #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length,1))
@@ -185,7 +225,7 @@ class dataset:
                 #filesets = {'lidar': [[ 'asit.lidar.', '.sta', 1 ]],
                 #            'met': [['asit.mininode.CLRohn_', '.csv', 0 ]],
                 #            'wind': [['asit.mininode.Sonic1_', '.csv', 0 ]]}
-                filesets = { 'lidar': [[ 'asit.ZXlidar.', '.CSV', 2], [ 'asit.lidar.', '.sta', 1 ]]}
+                filesets = { 'lidar': [[ 'asit.ZXlidar.', '.csv', 2], [ 'asit.lidar.', '.sta', 1 ]]}
                 
                 dataframes = []
 
@@ -219,7 +259,7 @@ class dataset:
                                 # file.
                                 for i in range(len(prepost)):
                                         fname = self.datafile.parent / 'whoi' / fileset / f'{prepost[i][0]}{fnum}{prepost[i][1]}'
-                                        if fname.is_file:
+                                        if fname.exists():
                                                 # we've got a promising filename
                                                 print(f'Confirmed file {fname}')
                                                 break
@@ -243,10 +283,13 @@ class dataset:
 
                                                                 df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
                                                                                  encoding='cp1252')
+
+                                                                print(df.dtypes)
                                                         elif row[0:9] == 'CSV Converter'[0:9]:
                                                                 print('Aaaah, the new LIDAR.')
                                                                 headersize = 1
                                                                 df = pd.read_csv(fname, index_col = 1, header = 1, encoding='cp1252')
+                                                                df = df[df.columns.drop(list(df.filter(regex='Checksum')))] # Checksum column is annoying, and useless for now
                                                                 pdb.set_trace()
                                                         else:
                                                                 print('Could not get header size. Assuming 0.')
@@ -418,10 +461,28 @@ class dataset:
                         
         def getVoltageScalingFactor(self):
                 try:
-                        self.voltageScalingFactor = float(self.voltageScalingFactorBox.get())
+                        self.voltageScalingFactor = float(self.browser.voltageScalingFactorBox.get())
                 except:
-                        print(f'Could not convert voltage scaling factor "{self.voltageScalingFactorBox.get()}" to number. Resetting to 1.')
+                        print(f'Could not convert voltage scaling factor "{self.browser.voltageScalingFactorBox.get()}" to number. Resetting to 1.')
                         self.voltageScalingFactor = 1.0
                 self.browser.voltageScalingFactorBox.delete(0, END)
-                self.browesr.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+                self.browser.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+
+        # Correct the voltage using self.fit for temperature
+        def applyTemperatureCorrection(self):
+                if not self.temperature_present:
+                        return self.volts_scaled
+
+                length = len(self.temps)
+                y = self.volts_scaled
+
+                # Seems like a good place to sort out the temperature correction:
+                if self.sensor_serial_number in self.fits:
+                        self.fit_exp = self.fits[self.sensor_serial_number]
+                else:
+                        print(f'*** UPDATE ***: No temperature calibration specifically for serial number {self.sensor_serial_number}.')
+                        self.fit_exp = self.fits[-1]
+                
+                volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
+                return volts
 
