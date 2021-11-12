@@ -311,6 +311,9 @@ class dataset:
                                                                     heights = [int(i.split('m')[0]) for i in h]
 
                                                                     df.rename(inplace=True, columns=column_rename)
+                                                                    # FUCK THOSE FUCKING RATFUCKERS
+                                                                    df.replace(inplace=True, to_replace=9998, value=np.NaN)
+                                                                    df.replace(inplace=True, to_replace=9999, value=np.NaN)
 
                                                             else:
                                                                     print('Could not get header size. Assuming 0.')
@@ -372,29 +375,14 @@ class dataset:
 
 
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
-                self.legends = {p:[] for p in self.plots}
-                self.z = {p:[] for p in self.plots}
+
+                # Get the final list of heights:
+                dfh = self.whoi.columns.tolist()
+                self.heights = [int(i.split('m')[0]) for i in dfh]
+                print(f'Final LIDAR heights: {self.heights}')
+
                 print('Interpolating 20-minute to 10-minute data...')
                 self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
-                        
-                # Build a list of things to plot:
-                for i,t in enumerate(self.whoi.columns):
-                        #print(f' Looking at column {i} : {t}')
-                        for toplot in self.plots:
-                                #print(f'Looking for "{toplot}" in "{t}"')
-                                if toplot in t:
-                                        #print('   ...found')
-                                        #pdb.set_trace()
-                                        #print(self.legends)
-                                        self.legends[toplot].append(t)
-                                        #print(f'Adding: self.legends[{toplot}].append({t})')
-                                        try:
-                                                self.z[toplot].append(int(t.split('m', 1)[0]))
-                                        except:
-                                                None
-                for toplot in self.plots:
-                        if len(self.legends[toplot]):
-                                self.whoi_graphs += 1
 
                 self.browser.waitbar_done()
                 self.browser.doTrainButton['state'] = 'normal'
@@ -447,3 +435,34 @@ class dataset:
                 volts = y - exponential(self.temps, *self.fit_exp) + np.mean(self.volts_scaled)
                 return volts
 
+
+
+        def saveFile(self):
+                fname = self.datafile.parent / f'{self.datafile.stem}_adjusted.csv'
+                print('fname will be "{fname}"')
+
+                # Get the number of lines in the file so we can do a perfect progress bar...
+                print(f'----- Saving {fname} -----')
+
+                if self.temperature_present:
+                        self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0], self.temps.transpose().tolist()[0])
+                        with open(fname, 'w', newline='') as f:
+                                print('Header lines, 4', file = f);
+                                print(f'Columns, datetime, original potential (V), potential after processing (V), temperature (C)', file = f)
+                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
+                                print(f"Exponential temperature fit parameters (v' = v - a*exp(bT)+c + |v|), {str(self.fit_exp)[1:-1]}", file = f)
+                                writer = csv.writer(f)
+                                writer.writerows(self.datathing)
+                else:
+                        self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0])
+                        with open(fname, 'w', newline='') as f:
+                                print('Header lines, 3', file = f);
+                                print(f'Columns, datetime, original potential (V), potential after processing (V)', file = f)
+                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
+                                writer = csv.writer(f)
+                                writer.writerows(self.datathing)
+
+                print('                  ...done.')
+
+                
+            

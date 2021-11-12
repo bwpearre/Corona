@@ -111,7 +111,7 @@ class CoronaBrowser(tk.Frame):
                 row = 0
                 self.loadButton = tk.Button(self, text="Load", command=self.loadFile)
                 self.loadButton.grid(row=row, column=0, columnspan=4)
-                self.saveButton = tk.Button(self, text='Save', command=self.saveFile, state='disabled')
+                self.saveButton = tk.Button(self, text='Save', command=self.debug, state='disabled')
                 self.saveButton.grid(row=row, column=6)
                 row += 1
                 tk.Label(self, text='Voltage scaling factor:').grid(row=row, column=0)
@@ -229,6 +229,7 @@ class CoronaBrowser(tk.Frame):
                 if filename:
                         self.reset_defaults()
                         self.d_test = avm.dataset(self, filename)
+                        self.prePlotWHOI(d = self.d_test)
 
                         self.rmplButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
@@ -248,32 +249,56 @@ class CoronaBrowser(tk.Frame):
                         
                         self.saveButton['state'] = 'normal'
                         self.doStatisticsButton['state'] = 'normal'
+
+                        self.plotEvents(self.d_test)
+
+
+        def prePlotWHOI(self, d):
+                # Set up for plotting...
+                self.legends = {p:[] for p in self.plots}
+                self.z = {p:[] for p in self.plots}
                         
-                        self.plotEvents()
+                # Build a list of things to plot:
+                for i,t in enumerate(d.whoi.columns):
+                        #print(f' Looking at column {i} : {t}')
+                        for toplot in self.plots:
+                                #print(f'Looking for "{toplot}" in "{t}"')
+                                if toplot in t:
+                                        #print('   ...found')
+                                        #print(self.legends)
+                                        self.legends[toplot].append(t)
+                                        print(f'Adding: self.legends[{toplot}].append({t})')
+                                        try:
+                                                self.z[toplot].append(int(t.split('m', 1)[0]))
+                                        except:
+                                                None
+                for toplot in self.plots:
+                        if len(self.legends[toplot]):
+                                self.whoi_graphs += 1
 
-
-        def plotEvents(self):
-                self.events = self.find_events(self.times, self.volts)
-                self.plot_timeseries(self.times, self.volts, self.temps, self.events)
+                        
+        def plotEvents(self, d):
+                self.events = self.find_events(d)
+                self.plot_timeseries(d, self.events)
                 if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
                         
 
         # Show default and new regressions from voltage-vs-temperature
-        def plot_temperature_corrections(self):
-                if not self.temperature_present:
+        def plot_temperature_corrections(self, d):
+                if not d.temperature_present:
                         plt.close(2)
                         return
 
                 self.waitbar_indeterminate_start('Computing regression...')
-                length = len(self.temps)
-                x = mat(self.temps).reshape((length,1))
+                length = len(d.temps)
+                x = mat(d.temps).reshape((length,1))
                 x = np.hstack((x, np.ones((length, 1))))
-                y = mat(self.volts_scaled).reshape((length,1))
+                y = mat(d.volts_scaled).reshape((length,1))
 
                 
-                xn = np.reshape(self.temps, -1)
-                yn = np.reshape(self.volts_scaled, -1)
+                xn = np.reshape(d.temps, -1)
+                yn = np.reshape(d.volts_scaled, -1)
 
                 #fit_desc_old = f'V = {self.fit[0,0]} * T + {self.fit[1,0]}'
                 #fit_desc_old_short = r'As applied: $V^* \approx ' + f'{self.fit[0,0]:.3g} \cdot T + {self.fit[1,0]:.3g}$'
@@ -301,10 +326,10 @@ class CoronaBrowser(tk.Frame):
                 self.fit_exp_new = exp_pars
                 self.useNewRegressionButton['state'] = 'normal'
 
-                sampleX_nl = np.linspace(min(self.temps)-0.1, max(self.temps+0.1), num=100)
+                sampleX_nl = np.linspace(min(d.temps)-0.1, max(d.temps+0.1), num=100)
                 
                 sampleY_nl = exponential(sampleX_nl, *exp_pars)
-                sampleX = [min(self.temps)-0.3, max(self.temps)+0.3]
+                sampleX = [min(d.temps)-0.3, max(d.temps)+0.3]
                 sampleX = mat(sampleX).reshape((2, 1))
                 sampleX = np.hstack((sampleX, np.ones((2, 1))))
                 sampleY_linear = sampleX * fit
@@ -315,7 +340,7 @@ class CoronaBrowser(tk.Frame):
                 plt.figure(num='temperature correction', figsize=(self.screendims_inches[0]*0.8, self.screendims_inches[1]*0.4))
                 plt.clf()
                 plt.subplot(1, 3, 1)
-                plt.scatter(self.temps, self.volts_scaled, s=0.01, c='black')
+                plt.scatter(d.temps, d.volts_scaled, s=0.01, c='black')
                 plt.plot(sampleX_nl, sampleY_old_exp, c='blue', label=fit_desc_old_short)
                 plt.plot(sampleX_nl, sampleY_nl, c='cyan', label=fit_desc_exp_short)
                 plt.plot(sampleX[:,0], sampleY_linear, c='red', linestyle="--", label=fit_desc_short)
@@ -325,63 +350,35 @@ class CoronaBrowser(tk.Frame):
                 plt.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
 
-                volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(self.volts_scaled)
-                volts_nl = y - exponential(self.temps, *exp_pars) + np.mean(self.volts_scaled)
+                volts = (y - x * fit).reshape((1,length)).tolist()[0] + np.mean(d.volts_scaled)
+                volts_nl = y - exponential(d.temps, *exp_pars) + np.mean(d.volts_scaled)
 
                 plt.subplot(1, 3, (2, 3))
                 ax1 = plt.gca()
-                ax1.plot(self.times, self.volts_scaled, label='Raw', c='blue', linewidth=1)
-                ax1.plot(self.times, volts, label='Potential new linear correction, if using this dataset', c='red', linewidth=1)
-                ax1.plot(self.times, self.volts, label='Corrected, as applied', c='black', linewidth=1)
-                ax1.plot(self.times, volts_nl, label='Potential new exponential correction', c='cyan', linewidth=1)
+                ax1.plot(d.times, d.volts_scaled, label='Raw', c='blue', linewidth=1)
+                ax1.plot(d.times, volts, label='Potential new linear correction, if using this dataset', c='red', linewidth=1)
+                ax1.plot(d.times, d.volts, label='Corrected, as applied', c='black', linewidth=1)
+                ax1.plot(d.times, volts_nl, label='Potential new exponential correction', c='cyan', linewidth=1)
                 ax1.set_xlabel('Time')
 
                 ax2 = ax1.twinx()
                 ax2.set_ylabel('Temperature (°C)', color='green')
-                ax2.plot(self.times, self.temps, color='green', label='Temperature', linewidth=1)
+                ax2.plot(d.times, d.temps, color='green', label='Temperature', linewidth=1)
                 ax2.tick_params(axis='y', labelcolor='green')
                 
                 ax1.legend()
                 plt.get_current_fig_manager().toolbar.zoom()
-                plt.title(self.datafile.stem)
+                plt.title(d.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
                 self.waitbar_indeterminate_done();
 
-        # Copy new fit parameters to default fit param location
-        def use_new_correction(self):
-                self.fit_exp = self.fit_exp_new
-                self.applyCorrections()
-
-
-        def saveFile(self):
-                fname = self.datafile.parent / f'{self.datafile.stem}_adjusted.csv'
-                print('fname will be "{fname}"')
-
-                # Get the number of lines in the file so we can do a perfect progress bar...
-                print(f'----- Saving {fname} -----')
-
-                if self.temperature_present:
-                        self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0], self.temps.transpose().tolist()[0])
-                        with open(fname, 'w', newline='') as f:
-                                print('Header lines, 4', file = f);
-                                print(f'Columns, datetime, original potential (V), potential after processing (V), temperature (C)', file = f)
-                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
-                                print(f"Exponential temperature fit parameters (v' = v - a*exp(bT)+c + |v|), {str(self.fit_exp)[1:-1]}", file = f)
-                                writer = csv.writer(f)
-                                writer.writerows(self.datathing)
-                else:
-                        self.datathing = zip(self.times, self.volts_raw.transpose().tolist()[0], self.volts.transpose().tolist()[0])
-                        with open(fname, 'w', newline='') as f:
-                                print('Header lines, 3', file = f);
-                                print(f'Columns, datetime, original potential (V), potential after processing (V)', file = f)
-                                print(f'Voltage scaling factor, {self.voltageScalingFactor}', file = f)
-                                writer = csv.writer(f)
-                                writer.writerows(self.datathing)
-
-                print('                  ...done.')
-
                 
+        # Copy new fit parameters to default fit param location
+        def use_new_correction(self, d):
+                self.fit_exp = self.fit_exp_new
+                d.applyCorrections()
+
 
 
         def slice_frame(self, pattern, df):
@@ -440,52 +437,48 @@ class CoronaBrowser(tk.Frame):
 
                 model.fit(generator, workers=12, epochs=100)
 
-                self.model = model
                 model.save('model')
                 
-                self.runPredictor()
+                #self.runPredictor(model, d)
+
+                return model
 
 
-        def runPredictor(self):
-                print('Entered runPredictor()')
-                if not hasattr(self, 'model'):
-                        self.waitbar_label['text'] = 'No model found.'
-                        return
-
+        def runPredictor(self, model, d):
                 print('Running trained predictor...')
                 
-                self.n_avm_samples = self.model.layers[0].output_shape[1]
+                self.n_avm_samples = model.layers[0].output_shape[1]
 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                df = pd.DataFrame(data={'AVM volts': d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
                 # Upsample WHOI LIDAR z-wind:
 
-                lidarz = self.whoi.loc[:, self.slice_frame('Z-wind (m/s)', self.whoi)]
+                lidarz = d.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d.whoi)]
 
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
                 df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
                 df3 = df3.interpolate(method='linear', limit_direction='both')
 
-                print(self.model.summary())
+                print(model.summary())
 
                 print('Generating timeseries...')
-                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(self.volts), shuffle = False)
+                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(d.volts), shuffle = False)
                 x, y = gen2[0]
                 self.z_predicted = np.full((self.n_avm_samples, 1), np.NaN)
                 print('Running the model...')
-                self.z_predicted = np.append(self.z_predicted, self.model.predict(x))
+                self.z_predicted = np.append(self.z_predicted, model.predict(x))
  
                 print('Plotting...')
                 fig = plt.figure(num = 'timeseries')
-                fig.axes[1].plot(self.times, self.z_predicted + 2, color='red')
+                fig.axes[1].plot(d.times, self.z_predicted + 2, color='red')
 
-                self.doStatistics()
+                self.doStatistics(d)
                 
                 
-        def find_events(self, times, volts):
+        def find_events(self, d):
                 events = Events()
                 # Temperature data mean we're using the atmospheric voltage monitor. Don't hilight events.
-                if self.temperature_present:
+                if d.temperature_present:
                         return events
                 
                 try:
@@ -505,15 +498,15 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox.insert(0, self.eventThreshold['count'])
 
 
-                self.waitbar_start('Looking for events...', len(times))
+                self.waitbar_start('Looking for events...', len(d.times))
 
                 thresholdCounter = 0
                 aboveThresholdStart = 0
 
-                for i in range(len(times)):
+                for i in range(len(d.times)):
                         self.waitbar_update(i)
 
-                        if volts[i] > self.eventThreshold['volts']:
+                        if d.volts[i] > self.eventThreshold['volts']:
                                 if thresholdCounter == 0:
                                         aboveThresholdStart = i
                                 thresholdCounter += 1
@@ -523,7 +516,7 @@ class CoronaBrowser(tk.Frame):
                                         #if thresholdCounter >= self.eventThreshold['count']:
                                         #        events.append(i)
                                         # If looking for time-above-threshold:
-                                        aboveThresholdTime = times[i-1] - times[aboveThresholdStart]
+                                        aboveThresholdTime = d.times[i-1] - d.times[aboveThresholdStart]
                                         if aboveThresholdTime.seconds >= self.eventThreshold['count']:
                                                 #print(f'Found an event of duration > {aboveThresholdTime.seconds} seconds.')
                                                 events.add(aboveThresholdStart, i, aboveThresholdTime.seconds)
@@ -532,7 +525,7 @@ class CoronaBrowser(tk.Frame):
                 return events
 
         # Plot voltage vs time using Matplotlib
-        def plot_timeseries(self, times, volts, temps=[], events=[]):
+        def plot_timeseries(self, d, events=[]):
 
                 fig = plt.figure(num='timeseries', figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.7))
                 fig.clf()
@@ -544,55 +537,55 @@ class CoronaBrowser(tk.Frame):
 
                 axes = [fig.gca()]
 
-                if self.temperature_present & self.plotTemperatureWithPotential.get():
+                if d.temperature_present & self.plotTemperatureWithPotential.get():
 
                         color = 'black'
                         axes[0].set_xlabel('Time')
                         axes[0].set_ylabel('Potential (V)', color=color)
-                        axes[0].plot(times, volts, color=color, label='Potential', linewidth=1)
+                        axes[0].plot(d.times, d.volts, color=color, label='Potential', linewidth=1)
                         axes[0].tick_params(axis='y', labelcolor=color)
 
                         ax00 = axes[0].twinx()
 
                         color = 'tab:green'
                         ax00.set_ylabel('Temperature (°C)', color=color)
-                        ax00.plot(times, temps, color=color, label='Temperature', linewidth=1)
+                        ax00.plot(d.times, d.temps, color=color, label='Temperature', linewidth=1)
                         ax00.tick_params(axis='y', labelcolor=color)
                         
                         for i in range(len(events.start_indices)):
                                 # No longer used; may be back eventually...
                                 if i == 0:
-                                        ax[0].plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                volts[events.start_indices[i]:events.end_indices[i]],
+                                        ax[0].plot(d.times[events.start_indices[i]:events.end_indices[i]],
+                                                d.volts[events.start_indices[i]:events.end_indices[i]],
                                                 c='red', linewidth=3, label='event?')
                                 else:
-                                        ax[0].plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                volts[events.start_indices[i]:events.end_indices[i]],
+                                        ax[0].plot(d.times[events.start_indices[i]:events.end_indices[i]],
+                                                d.volts[events.start_indices[i]:events.end_indices[i]],
                                                 c='red', linewidth=3)
 
                         fig.tight_layout()  # otherwise the right y-label is slightly clipped
 
                 else:
-                        axes[0].plot(times, volts, label='Potential', c='black', linewidth=0.5)
+                        axes[0].plot(d.times, d.volts, label='Potential', c='black', linewidth=0.5)
 
                         
                         for i in range(len(events.start_indices)):
                                 if i == 0:
-                                        plt.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                        plt.plot(d.times[events.start_indices[i]:events.end_indices[i]],
+                                                 d.volts[events.start_indices[i]:events.end_indices[i]],
                                                  c='red', linewidth=3, label='event?')
                                 else:
-                                        plt.plot(times[events.start_indices[i]:events.end_indices[i]],
-                                                 volts[events.start_indices[i]:events.end_indices[i]],
+                                        plt.plot(d.times[events.start_indices[i]:events.end_indices[i]],
+                                                 d.volts[events.start_indices[i]:events.end_indices[i]],
                                                  c='red', linewidth=3)
-                                #plt.scatter([times[i] for i in events.indices], [volts[i] for i in events.indices],
+                                #plt.scatter([times[i] for i in events.indices], [d.volts[i] for i in events.indices],
                                 #            s=events.sizes, c='red', label='Event?')
                         plt.ylabel('Potential (V)')
 
 
 
                 # Lines at midnight.
-                dr = pandas.date_range(self.times[1], self.times[-1], normalize=True).to_pydatetime()[1:].tolist()
+                dr = pandas.date_range(d.times[1], d.times[-1], normalize=True).to_pydatetime()[1:].tolist()
                 vr = axes[0].get_ylim()
                 for i in range(len(dr)):
                         axes[0].plot([dr[i], dr[i]], vr, color='black', alpha=0.2)
@@ -604,8 +597,8 @@ class CoronaBrowser(tk.Frame):
 
                         winlen = 128
                         noverlap = int(winlen / 2)
-                        spectimes = times[noverlap::noverlap]
-                        f, t, Sxx = signal.spectrogram(x=volts.flatten(), fs=0.1, noverlap=noverlap, window=signal.windows.tukey(winlen), mode='magnitude')
+                        spectimes = d.times[noverlap::noverlap]
+                        f, t, Sxx = signal.spectrogram(x=d.volts.flatten(), fs=0.1, noverlap=noverlap, window=signal.windows.tukey(winlen), mode='magnitude')
                         spectimes = spectimes[0:Sxx.shape[1]]
 
                         # Scale the spectrogram data for better visibility
@@ -636,24 +629,27 @@ class CoronaBrowser(tk.Frame):
                                         
                                         for i in [self.legends[toplot][x] for x in order]:
                                                 #print(f' axes {n}, order {i}')
-                                                axes[n].plot(self.whoi.index, self.whoi[i],
+                                                axes[n].plot(d.whoi.index, d.whoi[i],
                                                              label=i, color=colours[colour])
                                                 colour += 1
                                 #axes[n].legend()
-                                axes[n].set_xlim(self.times[0], self.times[-1])
+                                axes[n].set_xlim(d.times[0], d.times[-1])
                                 n += 1
                 
-                axes[0].set_title(self.datafile.stem)
+                axes[0].set_title(d.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
 
                 if not hasattr(self, 'model'):
-                        self.trainPredictor()
+                        self.model = self.trainPredictor()
                 
-                self.runPredictor()
+                self.runPredictor(self.model, d)
     
 
-        def doStatistics(self):
+        def doStatistics(self, d=0):
+                if isinstance(d, int):
+                        return
+                
                 corr_interesting_threshold = 0.35 # Show all correlations above a threshold
                 corr_interesting_n = 1 # Show the n most interesting
 
@@ -661,16 +657,16 @@ class CoronaBrowser(tk.Frame):
                 key = 'Predicted Z-wind'
                 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                #df = pd.DataFrame(data={key: self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
-                df = pd.DataFrame(data={key: self.z_predicted.squeeze()}, index=pd.DatetimeIndex(self.times))
+                #df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
+                df = pd.DataFrame(data={key: self.z_predicted.squeeze()}, index=pd.DatetimeIndex(d.times))
                 # Downsample onto the WHOI data's timestamps:
-                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).std()
-                df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).max()
-                #df = df.groupby(self.whoi.index[self.whoi.index.searchsorted(df.index)-1]).mean()
+                #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).std()
+                df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).max()
+                #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean()
                 
-                #self.whoi = self.whoi.join(df)
+                #d.whoi = d.whoi.join(df)
                 
-                whoi_interp = self.whoi.interpolate(method='linear', limit_direction='both')
+                whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
 
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp)
