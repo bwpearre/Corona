@@ -241,6 +241,8 @@ class dataset:
                 day_i = -1
                 fnum = ''
                 errors = 0
+
+                print('***** REMEMBER TO UPDATE ROUND 2 *****')
                 
                 while fnum != lastfnum:
                         day_i += 1
@@ -283,13 +285,31 @@ class dataset:
 
                                                                 df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
                                                                                  encoding='cp1252')
+                                                                df = df.filter(like='Z-wind (m/s)')
+                                                                dfh = df.columns.tolist()
+                                                                heights = [int(i.split('m')[0]) for i in dfh]
+                                                                print(heights)
+                                                                column_rename = {}
+                                                                for height in heights:
+                                                                    column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
+                                                                print(column_rename)
 
-                                                                print(df.dtypes)
                                                         elif row[0:9] == 'CSV Converter'[0:9]:
-                                                                print('Aaaah, the new LIDAR.')
+                                                                print('Aaaah, the new LIDAR. Add a timezone check sometime (it is in the header).')
                                                                 headersize = 1
                                                                 df = pd.read_csv(fname, index_col = 1, header = 1, encoding='cp1252')
-                                                                df = df[df.columns.drop(list(df.filter(regex='Checksum')))] # Checksum column is annoying, and useless for now
+                                                                #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
+                                                                # Actually, let's just get rid of everything but what we care about:
+                                                                df = df.filter(like='Vertical Wind Speed')
+                                                                
+                                                                dfh = df.columns.tolist()
+                                                                h = [i.split(' ')[5] for i in dfh]
+                                                                heights = [int(i.split('m')[0]) for i in h]
+                                                                print(heights)
+
+                                                                df.rename(inplace=True, columns=column_rename)
+                                                                print(df)
+                                                                
                                                                 pdb.set_trace()
                                                         else:
                                                                 print('Could not get header size. Assuming 0.')
