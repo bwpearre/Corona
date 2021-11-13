@@ -1,28 +1,11 @@
 import datetime as dt
-import tkinter as tk
-from tkinter import filedialog, ttk, END, BooleanVar
-import matplotlib
-matplotlib.use("TkAgg")
-matplotlib.interactive(True)
-import matplotlib.pyplot as plt
+from tkinter import END
 import numpy as np
-import pandas
 from numpy import mat # matrix
-from numpy.linalg import inv
-from scipy import signal
-from scipy.fft import fftshift
-from scipy.stats import linregress
-import math
 import time
-import pdb
-from scipy.optimize import curve_fit
-import traceback, sys, code
 import scipy.stats
-from scipy.fft import fft
 import csv
 from pathlib import Path
-import re
-import warnings
 import pandas as pd
 import pytz
 import geopy.distance
@@ -292,7 +275,7 @@ class dataset:
                                                                     dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
                                                                     print(f'            Location: {whoi_lidar_location}, {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000} km *****')
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
                                                                     
                                                                     # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                                     if whoi_lidar_timezone != "UTC+0":
@@ -324,7 +307,7 @@ class dataset:
                                                                     dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
                                                                     print(f'            Location: {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000} km *****')
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
 
                                                                     df = df.filter(like='Vertical Wind Speed')
 

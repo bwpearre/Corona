@@ -85,8 +85,8 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                self.loadFile(filename='data/20310992-2021-09.csv')
-                #self.loadFile(filename='data/20311010-2021-10.csv')
+                #self.loadFile(filename='data/20310992-2021-09.csv')
+                self.loadFile(filename='data/20311010-2021-10.csv')
                 #self.loadFile(filename='data/trunc.csv')
 
 
@@ -135,7 +135,7 @@ class CoronaBrowser(tk.Frame):
                 self.detectionCountBox = tk.Entry(self, width=5)
                 self.detectionCountBox.grid(row=row, column=4, sticky='W');
                 row += 1
-                self.rmplButton = tk.Button(self, text="Plot", command=self.plotEvents, state='disabled')
+                self.rmplButton = tk.Button(self, text="Plot", command=self.plot_timeseries, state='disabled')
                 self.rmplButton.grid(row=row, column=0)
                 self.plotTemperatureWithPotentialCheck = tk.Checkbutton(self, text="with temperature if available.", variable=self.plotTemperatureWithPotential)
                 self.plotTemperatureWithPotentialCheck.grid(row=row, column=1, sticky='W')
@@ -148,6 +148,8 @@ class CoronaBrowser(tk.Frame):
                 self.doStatisticsButton.grid(row=row, column=0)
                 self.doTrainButton = tk.Button(self, text='Train z-wind predictor', command=self.trainPredictor, state='disabled')
                 self.doTrainButton.grid(row=row, column=1)
+                self.doRunPredictorButton = tk.Button(self, text='Run z-wind predictor', command=self.runPredictor, state='disabled')
+                self.doRunPredictorButton.grid(row=row, column=2)
                 row += 1
                 self.waitbar_label = tk.Label(self, text='Ready.')
                 self.waitbar_label.grid(row=row, column=0, columnspan=5)
@@ -172,6 +174,8 @@ class CoronaBrowser(tk.Frame):
                 self.whoi_graphs = 0
                 self.regressButton.grid_forget()
                 self.useNewRegressionButton.grid_forget()
+                if hasattr(self, 'z_predicted'):
+                        del self.z_predicted
 
                 
         # Clean up matplotlib windows etc
@@ -237,6 +241,7 @@ class CoronaBrowser(tk.Frame):
                         #try:
                         if True:
                                 self.model = keras.models.load_model('model')
+                                self.doRunPredictorButton['state'] = 'normal'
                                 print('Loaded last saved z-wind prediction model.')
 
                         #except:
@@ -275,7 +280,9 @@ class CoronaBrowser(tk.Frame):
                                 self.whoi_graphs += 1
 
                         
-        def plotEvents(self, d):
+        def plotEvents(self, d=0):
+                if isinstance(d, int):
+                        d = self.d_test
                 if d.v_mode > 1:
                         return
                 d.events = self.find_events(d)
@@ -392,16 +399,22 @@ class CoronaBrowser(tk.Frame):
                 return r
                 
 
-        def trainPredictor(self):
-                print('Training predictor...')
+        def trainPredictor(self, d_train=0):
+                if not isinstance(d_train, avm.dataset):
+                        d_train = self.d_test
+                
+                print(f'Training predictor on {d_train.filename} ...')
+
+                # d_validation = avm.dataset(self, 'data/203101010-something.csv')
+                
                 self.n_avm_samples = 360
                 batch_size = 128
 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': self.volts.squeeze()}, index=pd.DatetimeIndex(self.times))
+                df = pd.DataFrame(data={'AVM volts': d_train.volts.squeeze()}, index=pd.DatetimeIndex(d_train.times))
                 # Upsample WHOI LIDAR z-wind:
 
-                lidarz = self.whoi.loc[:, self.slice_frame('Z-wind (m/s)', self.whoi)]
+                lidarz = d_train.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d_train.whoi)]
 
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
                 #df3 = df.join(df2, how='outer')
@@ -435,16 +448,28 @@ class CoronaBrowser(tk.Frame):
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator, workers=12, epochs=100)
+                model.fit(generator, workers=12, epochs=20)
+                self.doRunPredictorButton['state'] = 'normal'
 
                 model.save('model')
                 
-                #self.runPredictor(model, d)
+                self.runPredictor(model, d)
 
+                # Um... can be called via button, so I guess we need to do it this way too...
+                self.model = model
                 return model
 
 
-        def runPredictor(self, model, d):
+        def runPredictor(self, model=0, d=0):
+                if isinstance(model, int):
+                        if hasattr(self, 'model'):
+                                print('runPredictor(): no model parameter passed; running on saved model.')
+                                model = self.model
+                        else:
+                                print('runPredictor: no model found.')
+                if isinstance(d, int):
+                        d = self.d_test
+                
                 print('Running trained predictor...')
                 
                 self.n_avm_samples = model.layers[0].output_shape[1]
@@ -471,6 +496,8 @@ class CoronaBrowser(tk.Frame):
                 print('Plotting...')
                 fig = plt.figure(num = 'timeseries')
                 fig.axes[1].plot(d.times, self.z_predicted + 2, color='red')
+
+                self.doStatistics(d)
 
                 
         def find_events(self, d):
@@ -523,7 +550,9 @@ class CoronaBrowser(tk.Frame):
                 return events
 
         # Plot voltage vs time using Matplotlib
-        def plot_timeseries(self, d, events=[]):
+        def plot_timeseries(self, d=0, events=[]):
+                if isinstance(d, int):
+                        d = self.d_test
 
                 fig = plt.figure(num='timeseries', figsize=(self.screendims_inches[0]*0.7, self.screendims_inches[1]*0.7))
                 fig.clf()
@@ -640,24 +669,18 @@ class CoronaBrowser(tk.Frame):
                 plt.get_current_fig_manager().toolbar.zoom()
                 plt.show()
 
-                if not hasattr(self, 'model'):
-                        self.model = self.trainPredictor()
-                
-                self.runPredictor(self.model, d)
                 self.doStatistics(d)
-                
 
         def doStatistics(self, d=0):
                 if isinstance(d, int):
                         d = self.d_test
 
-                print("in doStatistics")
-                
                 corr_interesting_threshold = 0.1 # Show all correlations above a threshold
                 corr_interesting_n = 4 # Show the n most interesting
 
                 key = 'AVM volts'
                 key_z = 'Predicted Z-wind'
+
                 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
@@ -674,7 +697,7 @@ class CoronaBrowser(tk.Frame):
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp)
                 cor = df.corr()
-                corV = cor.loc[:,key].drop({key, key_z}) # correlation with key; drop self-corr
+                corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
@@ -685,14 +708,16 @@ class CoronaBrowser(tk.Frame):
                 # ...or show top n? Comment out the line below to use above.
                 interesting = corVs.index[range(0, np.min((corr_interesting_n, len(corVs.index))))]
                 if hasattr(self, 'z_predicted'):
-                        corVpred = cor.loc[:,key_z].drop({key, key_z}) # correlation with key; drop self-corr
+                        corVpred = cor.loc[:,key_z].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
                         corVpreds = corVpred.sort_values(ascending = False, key = lambda x: abs(x))
                         print(corVpreds)
 
                 if interesting.size or hasattr(self, 'z_predicted'):
-                        # If we run off the rectangle we'll just silently drop the least interesting ;)
+                        # Figure out the layout
                         n = int(np.ceil(np.sqrt(interesting.size)))
                         m = int(np.ceil(interesting.size / n))
+
+                        # If we run off the rectangle we'll just silently drop the least interesting ;)
                         plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.4, self.screendims_inches[1]*0.4))
                         plt.clf()
                         counter = 1
@@ -710,7 +735,7 @@ class CoronaBrowser(tk.Frame):
                                 try: # If z_predicted has pushed us outside the "interesting rectangle", just omit the last one
                                         ax = plt.subplot(n, m, counter)
                                 except:
-                                        print("One interesting graph was omitted; it didn't really seem all that interesting after all...")
+                                        print("One interesting graph was omitted for prettier layout; it didn't really seem all that interesting after all...")
                                         break
                                 df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
                                 #axsf[counter].legend()
