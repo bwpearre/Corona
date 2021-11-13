@@ -146,10 +146,10 @@ class dataset:
                                                 print(f'      Scaled Series found in column {column}.')
                                                 scaled_column = column
 
-                                # If there's no "voltage" column but there is a "scaled" column, I guess we just use that instead... and guess that the voltage_scaling_factor should probably be 2                  
+                                # If there's no "voltage" column but there is a "scaled" column, I guess we just use that instead... and guess that the voltage_scaling_factor should probably be 1                  
                                 if scaled_column >= 0:
-                                        if voltage_column == -1:
-                                                print('  Could not find "Volt" but did find "Scaled Series". Interpreting it as scaled voltage, and setting my internal scaling factor to 1. Please verify.')
+                                        if voltage_column == -1 or True:
+                                                print('  Could not find "Volt" (ACTUALLY THIS MAY BE A LIE) but did find "Scaled Series". Interpreting it as scaled voltage, and setting my internal scaling factor to 1. Please verify.')
                                                 voltage_column = scaled_column
                                                 self.setVoltageScalingFactor(1)
                                         else:
@@ -201,6 +201,7 @@ class dataset:
                             times = times[0:length]
                             #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length,1))
+
 
             return times, volts, temps
 
@@ -291,7 +292,7 @@ class dataset:
                                                                     dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
                                                                     print(f'            Location: {whoi_lidar_location}, {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist} m *****')
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000} km *****')
                                                                     
                                                                     # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                                     if whoi_lidar_timezone != "UTC+0":
@@ -323,7 +324,7 @@ class dataset:
                                                                     dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
                                                                     print(f'            Location: {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist} m *****')
+                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000} km *****')
 
                                                                     df = df.filter(like='Vertical Wind Speed')
 
@@ -417,12 +418,14 @@ class dataset:
                 # Correct for sensor temperature. Preserves mean value (i.e. not mean-0)
                 self.volts = self.applyTemperatureCorrection()
 
-                self.common_temp = scipy.stats.mode(self.volts)[0][0]
+                # Approximate mode of data: usually 0 unless we quantise it
+                self.v_mode = scipy.stats.mode((self.volts*10).astype(int))[0][0][0]/10
                 if self.temperature_present:
                         t = ' after temperature correction'
                 else:
                         t = ''
-                print(f'  Potential: mode is {self.common_temp} V{t} (fyi; not used)')
+                print(f'  Voltage: mode is roughly {self.v_mode} V{t}')
+
                 
         def setVoltageScalingFactor(self, vsf):
                 self.voltageScalingFactor = vsf

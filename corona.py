@@ -233,10 +233,6 @@ class CoronaBrowser(tk.Frame):
 
                         self.rmplButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
-                        if self.d_test.temperature_present:
-                                self.event_detection_enabled(False)
-                        else:
-                                self.event_detection_enabled(True)
 
                         #try:
                         if True:
@@ -250,7 +246,9 @@ class CoronaBrowser(tk.Frame):
                         self.saveButton['state'] = 'normal'
                         self.doStatisticsButton['state'] = 'normal'
 
-                        self.plotEvents(self.d_test)
+                        self.event_detection_enabled(self.d_test.v_mode < 1)
+
+                        self.plot_timeseries(self.d_test)
 
 
         def prePlotWHOI(self, d):
@@ -278,7 +276,9 @@ class CoronaBrowser(tk.Frame):
 
                         
         def plotEvents(self, d):
-                self.events = self.find_events(d)
+                if d.v_mode > 1:
+                        return
+                d.events = self.find_events(d)
                 self.plot_timeseries(d, self.events)
                 if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
@@ -472,8 +472,6 @@ class CoronaBrowser(tk.Frame):
                 fig = plt.figure(num = 'timeseries')
                 fig.axes[1].plot(d.times, self.z_predicted + 2, color='red')
 
-                self.doStatistics(d)
-                
                 
         def find_events(self, d):
                 events = Events()
@@ -551,8 +549,9 @@ class CoronaBrowser(tk.Frame):
                         ax00.set_ylabel('Temperature (°C)', color=color)
                         ax00.plot(d.times, d.temps, color=color, label='Temperature', linewidth=1)
                         ax00.tick_params(axis='y', labelcolor=color)
-                        
-                        for i in range(len(events.start_indices)):
+
+                        if isinstance(events, Events):
+                            for i in range(len(events.start_indices)):
                                 # No longer used; may be back eventually...
                                 if i == 0:
                                         ax[0].plot(d.times[events.start_indices[i]:events.end_indices[i]],
@@ -568,8 +567,9 @@ class CoronaBrowser(tk.Frame):
                 else:
                         axes[0].plot(d.times, d.volts, label='Potential', c='black', linewidth=0.5)
 
-                        
-                        for i in range(len(events.start_indices)):
+
+                        if isinstance(events, Events):
+                            for i in range(len(events.start_indices)):
                                 if i == 0:
                                         plt.plot(d.times[events.start_indices[i]:events.end_indices[i]],
                                                  d.volts[events.start_indices[i]:events.end_indices[i]],
@@ -644,75 +644,79 @@ class CoronaBrowser(tk.Frame):
                         self.model = self.trainPredictor()
                 
                 self.runPredictor(self.model, d)
-    
+                self.doStatistics(d)
+                
 
         def doStatistics(self, d=0):
                 if isinstance(d, int):
-                        return
-                
-                corr_interesting_threshold = 0.35 # Show all correlations above a threshold
-                corr_interesting_n = 1 # Show the n most interesting
+                        d = self.d_test
 
-                #key = 'AVM volts'
-                key = 'Predicted Z-wind'
+                print("in doStatistics")
+                
+                corr_interesting_threshold = 0.1 # Show all correlations above a threshold
+                corr_interesting_n = 4 # Show the n most interesting
+
+                key = 'AVM volts'
+                key_z = 'Predicted Z-wind'
                 
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                #df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
-                df = pd.DataFrame(data={key: self.z_predicted.squeeze()}, index=pd.DatetimeIndex(d.times))
+                df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
+                if hasattr(self, 'z_predicted'):
+                        df[key_z] = self.z_predicted.squeeze()
+
                 # Downsample onto the WHOI data's timestamps:
                 #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).std()
                 df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).max()
                 #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean()
-                
-                #d.whoi = d.whoi.join(df)
                 
                 whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
 
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp)
                 cor = df.corr()
-                corV = cor.loc[:,key]
+                corV = cor.loc[:,key].drop({key, key_z}) # correlation with key; drop self-corr
 
-                # Show the full correlation matrix
-                if False:
-                        plt.matshow(np.abs(cor))
-                        plt.show()
-                        plt.xticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14, rotation=45)
-                        plt.yticks(range(df.select_dtypes(['number']).shape[1]), df.select_dtypes(['number']).columns, fontsize=14)
-                        cb = plt.colorbar()
-                        cb.ax.tick_params(labelsize=14)
-                        plt.title('Correlation Matrix', fontsize=16);
+                # List interesting indices, in order of interestingness:
+                corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
+                print(corVs)
 
-                if True:
-                        # List interesting indices, in order of interestingness:
-                        corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
+                # Show ones above the threshold?
+                interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]
+                # ...or show top n? Comment out the line below to use above.
+                interesting = corVs.index[range(0, np.min((corr_interesting_n, len(corVs.index))))]
+                if hasattr(self, 'z_predicted'):
+                        corVpred = cor.loc[:,key_z].drop({key, key_z}) # correlation with key; drop self-corr
+                        corVpreds = corVpred.sort_values(ascending = False, key = lambda x: abs(x))
+                        print(corVpreds)
 
-                        # Show ones above the threshold?
-                        interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]
-                        interesting = interesting[1:] # Don't need to see self-correlation of 1
-                        # ...or show top n? Comment out the line below to use above.
-                        interesting = corVs.index[range(1, corr_interesting_n+1)]
-
-                        # This is too buggy:
-                        #df.plot(x = key, kind = 'scatter', subplots = True)
-
-                        if interesting.size:
-                                n = int(np.ceil(np.sqrt(interesting.size)))
-                                m = int(np.ceil(interesting.size / n))
-                                plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.3, self.screendims_inches[1]*0.3))
-                                plt.clf()
-                                #fig, axs = plt.subplots(n, m)
-                                #axsf = axs.flat
-                                counter = 1
-                                for y in interesting:
-                                        mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
-                                        slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key], df.loc[mask,y])
+                if interesting.size or hasattr(self, 'z_predicted'):
+                        # If we run off the rectangle we'll just silently drop the least interesting ;)
+                        n = int(np.ceil(np.sqrt(interesting.size)))
+                        m = int(np.ceil(interesting.size / n))
+                        plt.figure(num='correlations', figsize=(self.screendims_inches[0]*0.4, self.screendims_inches[1]*0.4))
+                        plt.clf()
+                        counter = 1
+                        if hasattr(self, 'z_predicted'):
+                                y = corVpreds.index[0]
+                                mask = ~np.isnan(df.loc[:,key_z]) & ~np.isnan(df.loc[:,y])
+                                slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key_z], df.loc[mask,y])
+                                ax = plt.subplot(n, m, counter)
+                                df.plot.scatter(x = key_z, y = y, ax = ax, s=5, c='blue', label=f'corr = {corVpred.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
+                                counter += 1
+                                
+                        for y in interesting:
+                                mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
+                                slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key], df.loc[mask,y])
+                                try: # If z_predicted has pushed us outside the "interesting rectangle", just omit the last one
                                         ax = plt.subplot(n, m, counter)
-                                        df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
-                                        #axsf[counter].legend()
-                                        counter += 1
-                        else:
-                                print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
+                                except:
+                                        print("One interesting graph was omitted; it didn't really seem all that interesting after all...")
+                                        break
+                                df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
+                                #axsf[counter].legend()
+                                counter += 1
+                else:
+                        print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
 
 
 # Set growth
