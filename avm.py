@@ -72,6 +72,7 @@ class dataset:
             scaled_column = -1
             temperature_in_freedom_units = False
             still_in_header = True
+            self.distance_max = 0
 
             with filename.open() as csv_file:
                 csv_reader = csv.reader(csv_file)
@@ -276,6 +277,9 @@ class dataset:
                                                                     print(f'            Location: {whoi_lidar_location}, {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
                                                                         print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
+                                                                    if dist > self.distance_max:
+                                                                            self.distance_max = dist
+                                                                   
                                                                     
                                                                     # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
                                                                     if whoi_lidar_timezone != "UTC+0":
@@ -308,6 +312,8 @@ class dataset:
                                                                     print(f'            Location: {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
                                                                         print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
+                                                                    if dist > self.distance_max:
+                                                                            self.distance_max = dist
 
                                                                     df = df.filter(like='Vertical Wind Speed')
 
@@ -386,8 +392,8 @@ class dataset:
                 self.heights = [int(i.split('m')[0]) for i in dfh]
                 print(f'Final LIDAR heights: {self.heights}')
 
-                print('Interpolating 20-minute to 10-minute data...')
-                self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
+                print('*** NOT Interpolating 20-minute to 10-minute data...')
+                #self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
 
                 self.browser.waitbar_done()
                 self.browser.doTrainButton['state'] = 'normal'
