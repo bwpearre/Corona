@@ -85,9 +85,11 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                #self.loadFile(filename='data/20310992-2021-09.csv')
-                self.loadFile(filename='data/20311010-2021-10.csv')
+                self.loadFile(filename='data/20310992-2021-08.csv')
+                #self.loadFile(filename='data/20311010-2021-10.csv')
+                #self.loadFile(filename='data/20311010_2021-10_0.csv')
                 #self.loadFile(filename='data/trunc.csv')
+                #self.loadFile(filename='data/20121725.csv')                
 
 
         def event_detection_enabled(self, state):
@@ -419,7 +421,7 @@ class CoronaBrowser(tk.Frame):
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
                 #df3 = df.join(df2, how='outer')
                 df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
-                df3 = df3.interpolate(method='linear', limit_direction='both')
+                #df3 = df3.interpolate(method='linear', limit_direction='both')
 
                 #df3.fillna(MASK, inplace=True)
                 generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
@@ -453,7 +455,7 @@ class CoronaBrowser(tk.Frame):
 
                 model.save('model')
                 
-                self.runPredictor(model, d)
+                self.runPredictor(model=model, d=d_train)
 
                 # Um... can be called via button, so I guess we need to do it this way too...
                 self.model = model
@@ -482,7 +484,7 @@ class CoronaBrowser(tk.Frame):
 
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
                 df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
-                df3 = df3.interpolate(method='linear', limit_direction='both')
+                # df3 = df3.interpolate(method='linear', limit_direction='both')
 
                 print(model.summary())
 
@@ -648,7 +650,7 @@ class CoronaBrowser(tk.Frame):
                                 axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
 
                                 if len(self.legends[toplot]) == 1:
-                                        axes[n].plot(self.whoi.index, self.whoi[toplot], label=i)
+                                        axes[n].plot(d.whoi.index, d.whoi[toplot], label=i)
                                 else:
                                         order = np.argsort(self.z[toplot])
                                         z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
@@ -676,29 +678,45 @@ class CoronaBrowser(tk.Frame):
                         d = self.d_test
 
                 corr_interesting_threshold = 0.1 # Show all correlations above a threshold
-                corr_interesting_n = 4 # Show the n most interesting
+                corr_interesting_n = 1 # Show the n most interesting
 
                 key = 'AVM volts'
                 key_z = 'Predicted Z-wind'
 
-                
                 # Stick Ted's data into a dataframe. This has already had the timezone sorted.
                 df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
                 if hasattr(self, 'z_predicted'):
                         df[key_z] = self.z_predicted.squeeze()
+                        if corr_interesting_n == 1:
+                                # Only one? C'mon! Let's show both.
+                                corr_interesting_n = 2
 
-                # Downsample onto the WHOI data's timestamps:
-                #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).std()
-                df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).max()
-                #df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean()
+                #pdb.set_trace()
+
+                # Downsample onto the WHOI data's timestamps. This
+                # introduces a bit of weirdness if there's a gap in
+                # LIDAR timestamps (e.g. 3 days missing...) but
+                # *shrug*
+                df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean() # .std(), .max(), etc...
                 
-                whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
+                #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
+                whoi_interp = d.whoi
 
                 # Easiest most braindead way to line up all the data?
-                df = df.join(whoi_interp)
+                df = df.join(whoi_interp, how='left')
                 cor = df.corr()
+                
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
+                print(d.heights)
+                print(corV)
+                plt.figure('height')
+                plt.clf()
+                plt.plot(d.heights, corV)
+                plt.xlabel('height (m)')
+                plt.ylabel('correlation with voltage')
+                plt.title(f'{d.datafile.stem}\nMax distance = {int(d.distance_max)} m')
+                
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
                 print(corVs)
@@ -726,7 +744,7 @@ class CoronaBrowser(tk.Frame):
                                 mask = ~np.isnan(df.loc[:,key_z]) & ~np.isnan(df.loc[:,y])
                                 slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key_z], df.loc[mask,y])
                                 ax = plt.subplot(n, m, counter)
-                                df.plot.scatter(x = key_z, y = y, ax = ax, s=5, c='blue', label=f'corr = {corVpred.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
+                                df.plot.scatter(x = key_z, y = y, ax = ax, s=5, c='blue', label=f'corr={r_value:.2g}, λ={slope:.2g}, s={std_err:.2g}, p={p_value:.2g}')
                                 counter += 1
                                 
                         for y in interesting:
@@ -737,7 +755,7 @@ class CoronaBrowser(tk.Frame):
                                 except:
                                         print("One interesting graph was omitted for prettier layout; it didn't really seem all that interesting after all...")
                                         break
-                                df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr = {corV.loc[y]:.2f}, p={p_value:.2g}, r={r_value:.2g}')
+                                df.plot.scatter(x = key, y = y, ax = ax, s=5, c='black', label=f'corr={r_value:.2g}, λ={slope:.2g}, s={std_err:.2g}, p={p_value:.2g}')
                                 #axsf[counter].legend()
                                 counter += 1
                 else:
