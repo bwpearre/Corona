@@ -9,7 +9,10 @@ from pathlib import Path
 import pandas as pd
 import pytz
 import geopy.distance
-
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.io.img_tiles as cimgt
+import pdb
 
 def exponential(x, a, b, c):
         #return a + b * x + c * np.square(x)
@@ -44,9 +47,11 @@ class dataset:
 
 
                 
-        # Much faster loading than pandas (is it really worth
-        # it?). Note that Python grows lists sensibly, so repeated
-        # calls to append() aren't as inefficient as they look.
+        # Much faster loading than pandas (is it really worth it? It
+        # was during the early stage of this project when loading was
+        # by far the slowest thing). Note that Python grows lists
+        # sensibly, so repeated calls to append() aren't as
+        # inefficient as they look.
         def loadFileBen(self, filename):
             times = []
             volts = []
@@ -92,6 +97,7 @@ class dataset:
                                 self.latitude = float(foo[1])
                             elif 'longitude' in foo[0].lower():
                                 self.longitude = float(foo[1])
+
                             elif foo[0][0]=='#':
                                 # This is the line with all the header info. Figure out what we have...
                                 print(f'   Location = {self.location} at {self.latitude}, {self.longitude}')
@@ -171,6 +177,7 @@ class dataset:
 
 
             self.browser.waitbar_done()
+
             #register_matplotlib_converters()
             length = min(len(times), len(volts))
             if self.temperature_present:
@@ -233,6 +240,7 @@ class dataset:
                     day_i = -1
                     fnum = ''
                     errors = 0
+                    lidarloc = np.empty((0,2), float)
 
                     while fnum != lastfnum:
                             day_i += 1
@@ -270,19 +278,19 @@ class dataset:
                                                                     headersize = int(row.split('=')[1])
                                                                     mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
                                                                                       encoding='cp1252')
-                                                                    whoi_lidar_timezone = mdf.loc['timezone', 1]
-                                                                    whoi_lidar_location = mdf.loc['Location', 1].strip()
-                                                                    whoi_lidar_latitude, whoi_lidar_longitude = self.whoi_lidar_old_latlon_parse(mdf.loc['GPS Location', 1])
-                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
-                                                                    print(f'            Location: {whoi_lidar_location}, {int(np.round(dist))} m from AVM')
+                                                                    timezone = mdf.loc['timezone', 1]
+                                                                    location = mdf.loc['Location', 1].strip()
+                                                                    latitude, longitude = self.whoi_lidar_old_latlon_parse(mdf.loc['GPS Location', 1])
+                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (latitude, longitude)).m
+                                                                    print(f'            Location: {location}, {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
                                                                         print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
                                                                     if dist > self.distance_max:
                                                                             self.distance_max = dist
-                                                                   
+                                                                    lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
                                                                     
                                                                     # I can't deal with the 19 different timezone and time offset systems in Python. Just check that it hasn't changed:
-                                                                    if whoi_lidar_timezone != "UTC+0":
+                                                                    if timezone != "UTC+0":
                                                                             raise Exception('LIDAR time offset changed.')
 
                                                                     df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
@@ -306,14 +314,15 @@ class dataset:
                                                                     #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
                                                                     # Actually, let's just get rid of everything but what we currently care about:
                                                                     latlon = df['GPS'].iat[0].split()
-                                                                    whoi_lidar_latitude = float(latlon[0])
-                                                                    whoi_lidar_longitude = float(latlon[1])
-                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (whoi_lidar_latitude, whoi_lidar_longitude)).m
+                                                                    latitude = float(latlon[0])
+                                                                    longitude = float(latlon[1])
+                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (latitude, longitude)).m
                                                                     print(f'            Location: {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
                                                                         print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
                                                                     if dist > self.distance_max:
                                                                             self.distance_max = dist
+                                                                    lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
 
                                                                     df = df.filter(like='Vertical Wind Speed')
 
@@ -387,6 +396,28 @@ class dataset:
 
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
 
+                fig = plt.figure(num='map')
+                fig.clf()
+                locs = np.array([[self.latitude, self.longitude]], ndmin=2)
+                locs = np.append(locs, lidarloc, axis=0)
+                
+                terrain = cimgt.GoogleTiles(style='satellite')
+                self.map = fig.add_subplot(1, 1, 1, projection=terrain.crs)
+                self.map.set_extent([locs.min(axis=0)[1]-0.2, locs.max(axis=0)[1]+0.2, locs.min(axis=0)[0]-0.15, locs.max(axis=0)[0]+0.15], crs=ccrs.Geodetic())
+                self.map.add_image(terrain, 13)
+                gl = self.map.gridlines(draw_labels=True)
+                gl.xlines = False
+                gl.ylines = False
+                
+                self.map.plot(self.longitude, self.latitude, marker='o', color='yellow', markersize=12,
+                              alpha=1, transform=ccrs.Geodetic())
+                for i in range(lidarloc.shape[0]):
+                        self.map.plot(lidarloc[i,1], lidarloc[i,0], marker='o', color='red', markersize=4,
+                                      alpha=1, transform=ccrs.Geodetic())
+
+                            
+            
+                
                 # Get the final list of heights:
                 dfh = self.whoi.columns.tolist()
                 self.heights = [int(i.split('m')[0]) for i in dfh]

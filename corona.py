@@ -87,7 +87,7 @@ class CoronaBrowser(tk.Frame):
                 #self.model = tf.keras.models.load_model('model')
                 self.loadFile(filename='data/20310992-2021-08.csv')
                 #self.loadFile(filename='data/20311010-2021-10.csv')
-                #self.loadFile(filename='data/20311010_2021-10_0.csv')
+                #self.loadFile(filename='data/20311010-2021-10.csv')
                 #self.loadFile(filename='data/trunc.csv')
                 #self.loadFile(filename='data/20121725.csv')                
 
@@ -690,8 +690,6 @@ class CoronaBrowser(tk.Frame):
                         if corr_interesting_n == 1:
                                 # Only one? C'mon! Let's show both.
                                 corr_interesting_n = 2
-
-                #pdb.set_trace()
 
                 # Downsample onto the WHOI data's timestamps. This
                 # introduces a bit of weirdness if there's a gap in
