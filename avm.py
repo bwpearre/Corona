@@ -275,6 +275,7 @@ class dataset:
                                                             row = f.readline()
                                                             if row[0:9] == 'HeaderSize'[0:9]:
                                                                     # Old LIDAR
+                                                                    # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
                                                                     headersize = int(row.split('=')[1])
                                                                     mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
                                                                                       encoding='cp1252')
@@ -311,6 +312,10 @@ class dataset:
                                                                     # New LIDAR
                                                                     headersize = 1
                                                                     df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
+                                                                    # FUCK THOSE FUCKING RATFUCKERS
+                                                                    df.replace(inplace=True, to_replace=9998, value=np.NaN)
+                                                                    df.replace(inplace=True, to_replace=9999, value=np.NaN)
+
                                                                     #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
                                                                     # Actually, let's just get rid of everything but what we currently care about:
                                                                     latlon = df['GPS'].iat[0].split()
@@ -325,15 +330,13 @@ class dataset:
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
 
                                                                     df = df.filter(like='Vertical Wind Speed')
+                                                                    df = -df # Fix "positive-up" mismatch
 
                                                                     dfh = df.columns.tolist()
                                                                     h = [i.split(' ')[5] for i in dfh]
                                                                     heights = [int(i.split('m')[0]) for i in h]
 
                                                                     df.rename(inplace=True, columns=column_rename)
-                                                                    # FUCK THOSE FUCKING RATFUCKERS
-                                                                    df.replace(inplace=True, to_replace=9998, value=np.NaN)
-                                                                    df.replace(inplace=True, to_replace=9999, value=np.NaN)
 
                                                             else:
                                                                     print('Could not get header size. Assuming 0.')

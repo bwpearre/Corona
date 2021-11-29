@@ -74,6 +74,8 @@ for round in {0, 1}:
                     if row[0:9] == 'HeaderSize'[0:9]:
                         
                         # Old LIDAR
+                        # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
+
                         headersize = int(row.split('=')[1])
                         mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
                                           encoding='cp1252')
@@ -112,6 +114,10 @@ for round in {0, 1}:
                         locs = np.append(locs, np.array([[latitude, longitude]]), axis=0)
 
                         df = df.filter(like='Vertical Wind Speed')
+                        # FUCK THOSE FUCKING RATFUCKERS
+                        df.replace(inplace=True, to_replace=9998, value=np.NaN)
+                        df.replace(inplace=True, to_replace=9999, value=np.NaN)
+                        df = -df[df.columns[::-1]] # Make column order the same for old and new, and fix positive-up mismatch
 
                         dfh = df.columns.tolist()
                         h = [i.split(' ')[5] for i in dfh]
@@ -123,10 +129,6 @@ for round in {0, 1}:
                             column_rename_more[cn] = f'{cn} new'
                         df.rename(inplace=True, columns=column_rename_more)
                             
-                        # FUCK THOSE FUCKING RATFUCKERS
-                        df.replace(inplace=True, to_replace=9998, value=np.NaN)
-                        df.replace(inplace=True, to_replace=9999, value=np.NaN)
-
 
                     else:
                         print('Could not get header size. Assuming 0.')
@@ -161,6 +163,10 @@ for round in {0, 1}:
     print(f'After ROUND {round}: dataset is {whoi.shape}')
 
 whoi = whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
+
+
+cor = whoi.corr()
+print(cor)
 
 fig = plt.figure(num='map')
 fig.clf()

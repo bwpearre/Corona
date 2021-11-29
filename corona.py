@@ -85,9 +85,8 @@ class CoronaBrowser(tk.Frame):
         def debug_seq(self):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
-                self.loadFile(filename='data/20310992-2021-08.csv')
-                #self.loadFile(filename='data/20311010-2021-10.csv')
-                #self.loadFile(filename='data/20311010-2021-10.csv')
+                #self.loadFile(filename='data/20310992-2021-08.csv')
+                self.loadFile(filename='data/20311010-2021-10.csv')
                 #self.loadFile(filename='data/trunc.csv')
                 #self.loadFile(filename='data/20121725.csv')                
 
