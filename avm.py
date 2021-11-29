@@ -310,7 +310,7 @@ class dataset:
                                                             elif row[0:9] == 'CSV Converter'[0:9]:
                                                                     # New LIDAR
                                                                     headersize = 1
-                                                                    df = pd.read_csv(fname, parse_dates = [1], index_col = 1, header = 1, encoding='cp1252')
+                                                                    df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
                                                                     #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
                                                                     # Actually, let's just get rid of everything but what we currently care about:
                                                                     latlon = df['GPS'].iat[0].split()
@@ -392,7 +392,6 @@ class dataset:
                             self.whoi = self.whoi[~self.whoi.index.duplicated(keep='first')] # FIXME: This will toss some rows that contain data. Fixed in ROUND 1.
                             self.whoi.dropna(inplace=True, axis='columns', how='all')
                     print(f'After ROUND {round}: dataset is {self.whoi.shape}')
-
 
                 self.whoi = self.whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
 
@@ -526,3 +525,5 @@ class dataset:
                 longitude = -longitude
 
             return latitude, longitude
+
+    
