@@ -34,23 +34,26 @@ date_format_lidar = '%Y/%m/%d %H:%M'
 # Convert new to old column names:
 column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)'}
 
-filesets = { 'new lidar': [ 'asit.ZXlidar.', '.csv', 2],
-             'old lidar': [ 'asit.lidar.', '.sta', 1 ]}
+filesets = { 'new lidar': [ 'asit.ZXlidar.', '.csv'],
+             'old lidar': [ 'asit.lidar.', '.sta']}
 
 dataframes = []
 
-firstfnum = 270
-lastfnum = 278
 
-parent = Path('.')
-parent = parent / 'data' / 'whoi' / 'lidar'
+# 244--281
+firstfnum = 244
+lastfnum = 281
+
+
+datadir = Path('.') / 'data' / 'whoi' / 'lidar'
 
 for round in {0, 1}:
 
     day_i = -1
     fnum = firstfnum - 1
     errors = 0
-    locs = np.empty((0,2), float)
+    locs_old = np.empty((0,2), float)
+    locs_new = np.empty((0,2), float)
 
     while fnum < lastfnum:
         fnum = fnum + 1
@@ -61,7 +64,7 @@ for round in {0, 1}:
 
         for fileset, prepost in filesets.items():
 
-            fname = parent / f'{prepost[0]}2021_{fnum}{prepost[1]}'
+            fname = datadir / f'{prepost[0]}2021_{fnum}{prepost[1]}'
             d = dt.date(2021, 1, 1) + dt.timedelta(days = fnum - 1)
 
             if fname.is_file():
@@ -84,7 +87,7 @@ for round in {0, 1}:
                         timezone = mdf.loc['timezone', 1]
                         location = mdf.loc['Location', 1].strip()
                         latitude, longitude = whoi_lidar_old_latlon_parse(mdf.loc['GPS Location', 1])
-                        locs = np.append(locs, np.array([[latitude, longitude]]), axis=0)
+                        locs_old = np.append(locs_old, np.array([[latitude, longitude]]), axis=0)
 
                         if timezone != "UTC+0":
                                 raise Exception('LIDAR time offset changed.')
@@ -118,7 +121,7 @@ for round in {0, 1}:
                         latlon = df['GPS'].iat[0].split()
                         latitude = float(latlon[0])
                         longitude = float(latlon[1])
-                        locs = np.append(locs, np.array([[latitude, longitude]]), axis=0)
+                        locs_new = np.append(locs_new, np.array([[latitude, longitude]]), axis=0)
 
                         df = df.filter(like='Vertical Wind Speed')
                         # FUCK THOSE FUCKING RATFUCKERS
@@ -169,8 +172,16 @@ for round in {0, 1}:
             whoi.dropna(inplace=True, axis='columns', how='all')
     print(f'After ROUND {round}: dataset is {whoi.shape}')
 
+whoi.dropna(inplace=True)
 whoi = whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
 
+whoiold = whoi.filter(like='old').to_numpy()
+whoinew = whoi.filter(like='new').to_numpy()
+diff = pd.DataFrame(data=whoinew-whoiold, index=whoi.index, columns=heights)
+
+diff.plot()
+
+print(f'Mean difference:\n{diff.mean()}\nStandard deviation:\n{diff.std()}')
 
 cor = np.diag(whoi.corr(), len(heights))
 print(f'Correlations between old and new: {cor}')
@@ -180,14 +191,18 @@ fig.clf()
 
 terrain = cimgt.GoogleTiles(style='satellite')
 map = fig.add_subplot(1, 1, 1, projection=terrain.crs)
-map.set_extent([locs.min(axis=0)[1]-0.03, locs.max(axis=0)[1]+0.03, locs.min(axis=0)[0]-0.02, locs.max(axis=0)[0]+0.04], crs=ccrs.Geodetic())
+map.set_extent([locs_old.min(axis=0)[1]-0.03, locs_old.max(axis=0)[1]+0.03, locs_old.min(axis=0)[0]-0.02, locs_old.max(axis=0)[0]+0.04], crs=ccrs.Geodetic())
 map.add_image(terrain, 13)
 gl = map.gridlines(draw_labels=True)
 gl.xlines = False
 gl.ylines = False
 
-for i in range(locs.shape[0]):
-        map.plot(locs[i,1], locs[i,0], marker='o', color='red', markersize=4,
+for i in range(locs_old.shape[0]):
+        map.plot(locs_old[i,1], locs_old[i,0], marker='o', color='blue', markersize=4,
+                      alpha=1, transform=ccrs.Geodetic())
+
+for i in range(locs_new.shape[0]):
+        map.plot(locs_new[i,1], locs_new[i,0], marker='o', color='red', markersize=4,
                       alpha=1, transform=ccrs.Geodetic())
 
 # Get the final list of heights:
