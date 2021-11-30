@@ -249,7 +249,7 @@ class dataset:
                             self.browser.waitbar_update(day_i/2 + round*n_days/2)
 
                             fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
-                            print(f' Loading WHOI files {fnum} (round {round})...')
+                            print(f' Loading WHOI files {fnum} ({(times[0] + dt.timedelta(days=day_i))}) (round {round})...')
 
                             daily_data = []
 
@@ -276,6 +276,7 @@ class dataset:
                                                             if row[0:9] == 'HeaderSize'[0:9]:
                                                                     # Old LIDAR
                                                                     # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
+                                                                    # Date index is "end of interval"
                                                                     headersize = int(row.split('=')[1])
                                                                     mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
                                                                                       encoding='cp1252')
@@ -310,8 +311,12 @@ class dataset:
 
                                                             elif row[0:9] == 'CSV Converter'[0:9]:
                                                                     # New LIDAR
+                                                                    # Date index is "beginning of interval". This will be modified below.
                                                                     headersize = 1
                                                                     df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
+                                                                    # Align index to "end of interval":
+                                                                    df.set_index(df.index.to_series() + dt.timedelta(minutes=10), inplace=True)
+
                                                                     # FUCK THOSE FUCKING RATFUCKERS
                                                                     df.replace(inplace=True, to_replace=9998, value=np.NaN)
                                                                     df.replace(inplace=True, to_replace=9999, value=np.NaN)
@@ -423,7 +428,7 @@ class dataset:
                 # Get the final list of heights:
                 dfh = self.whoi.columns.tolist()
                 self.heights = [int(i.split('m')[0]) for i in dfh]
-                print(f'Final LIDAR heights: {self.heights}')
+                #print(f'Final LIDAR heights: {self.heights}')
 
                 print('*** NOT Interpolating 20-minute to 10-minute data...')
                 #self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')

@@ -1,3 +1,4 @@
+import datetime as dt
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
@@ -61,11 +62,11 @@ for round in {0, 1}:
         for fileset, prepost in filesets.items():
 
             fname = parent / f'{prepost[0]}2021_{fnum}{prepost[1]}'
-
+            d = dt.date(2021, 1, 1) + dt.timedelta(days = fnum - 1)
 
             if fname.is_file():
 
-                print(f'      Loading {fname}')
+                print(f'      Loading {fname} ({d})')
 
                 column_rename_more = {}
                 
@@ -75,6 +76,7 @@ for round in {0, 1}:
                         
                         # Old LIDAR
                         # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
+                        # Timestamps are "end of interval"
 
                         headersize = int(row.split('=')[1])
                         mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
@@ -103,9 +105,13 @@ for round in {0, 1}:
 
                     elif row[0:9] == 'CSV Converter'[0:9]:
                         # New LIDAR
+                        # Timestamps are "start of interval"
                         headersize = 1
                         df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
+                        # Convert timestamps to "end of interval" by adding 10 minutes (hardcoded in case of missing data) to each
+                        df.set_index(df.index.to_series() + dt.timedelta(minutes=10), inplace=True)
                         print(f'          Date range {df.index[0]}  --   {df.index[-1]}')
+                        
                         #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
                         # Actually, let's just get rid of everything but what we currently care about:
                         latlon = df['GPS'].iat[0].split()
@@ -165,15 +171,15 @@ for round in {0, 1}:
 whoi = whoi.tz_localize('UTC') # see "just check that it hasn't changed" above
 
 
-cor = whoi.corr()
-print(cor)
+cor = np.diag(whoi.corr(), len(heights))
+print(f'Correlations between old and new: {cor}')
 
 fig = plt.figure(num='map')
 fig.clf()
 
 terrain = cimgt.GoogleTiles(style='satellite')
 map = fig.add_subplot(1, 1, 1, projection=terrain.crs)
-map.set_extent([locs.min(axis=0)[1]-0.03, locs.max(axis=0)[1]+0.03, locs.min(axis=0)[0]-0.03, locs.max(axis=0)[0]+0.04], crs=ccrs.Geodetic())
+map.set_extent([locs.min(axis=0)[1]-0.03, locs.max(axis=0)[1]+0.03, locs.min(axis=0)[0]-0.02, locs.max(axis=0)[0]+0.04], crs=ccrs.Geodetic())
 map.add_image(terrain, 13)
 gl = map.gridlines(draw_labels=True)
 gl.xlines = False
@@ -185,10 +191,7 @@ for i in range(locs.shape[0]):
 
 # Get the final list of heights:
 dfh = whoi.columns.tolist()
-print(dfh)
 heights = [int(i.split('m')[0]) for i in dfh]
-print(f'Final LIDAR heights: {heights}')
-
 
 ax = whoi.filter(like='old').plot(colormap='Blues')
 whoi.filter(like='new').plot(ax=ax, colormap='Reds')

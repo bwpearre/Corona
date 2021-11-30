@@ -271,7 +271,7 @@ class CoronaBrowser(tk.Frame):
                                         #print('   ...found')
                                         #print(self.legends)
                                         self.legends[toplot].append(t)
-                                        print(f'Adding: self.legends[{toplot}].append({t})')
+                                        #print(f'Adding: self.legends[{toplot}].append({t})')
                                         try:
                                                 self.z[toplot].append(int(t.split('m', 1)[0]))
                                         except:
@@ -418,9 +418,9 @@ class CoronaBrowser(tk.Frame):
                 lidarz = d_train.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d_train.whoi)]
 
                 df2 = lidarz.max(axis='columns').rename('Z-wind')
-                #df3 = df.join(df2, how='outer')
+                df3 = df.join(df2, how='outer')
                 df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
-                #df3 = df3.interpolate(method='linear', limit_direction='both')
+                df3 = df3.interpolate(method='linear', limit_direction='both')
 
                 #df3.fillna(MASK, inplace=True)
                 generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
@@ -496,7 +496,7 @@ class CoronaBrowser(tk.Frame):
  
                 print('Plotting...')
                 fig = plt.figure(num = 'timeseries')
-                fig.axes[1].plot(d.times, self.z_predicted + 2, color='red')
+                fig.axes[1].plot(d.times, self.z_predicted, color='red')
 
                 self.doStatistics(d)
 
@@ -677,7 +677,7 @@ class CoronaBrowser(tk.Frame):
                         d = self.d_test
 
                 corr_interesting_threshold = 0.1 # Show all correlations above a threshold
-                corr_interesting_n = 1 # Show the n most interesting
+                corr_interesting_n = 4 # Show the n most interesting
 
                 key = 'AVM volts'
                 key_z = 'Predicted Z-wind'
@@ -705,8 +705,6 @@ class CoronaBrowser(tk.Frame):
                 
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
-                print(d.heights)
-                print(corV)
                 plt.figure('height')
                 plt.clf()
                 plt.plot(d.heights, corV)
@@ -716,7 +714,7 @@ class CoronaBrowser(tk.Frame):
                 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
-                print(corVs)
+                print(f'Correlations: {corVs}')
 
                 # Show ones above the threshold?
                 interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]
@@ -725,7 +723,7 @@ class CoronaBrowser(tk.Frame):
                 if hasattr(self, 'z_predicted'):
                         corVpred = cor.loc[:,key_z].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
                         corVpreds = corVpred.sort_values(ascending = False, key = lambda x: abs(x))
-                        print(corVpreds)
+                        print(f'Prediction correlations: {corVpreds}')
 
                 if interesting.size or hasattr(self, 'z_predicted'):
                         # Figure out the layout
