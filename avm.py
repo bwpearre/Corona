@@ -249,7 +249,7 @@ class dataset:
                             self.browser.waitbar_update(day_i/2 + round*n_days/2)
 
                             fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
-                            print(f' Loading WHOI files {fnum} ({(times[0] + dt.timedelta(days=day_i))}) (round {round})...')
+                            print(f' Loading WHOI files {fnum} ({(times[0] + dt.timedelta(days=day_i)).strftime("%Y-%m-%d")}) (round {round})...')
 
                             daily_data = []
 
@@ -275,7 +275,7 @@ class dataset:
                                                             row = f.readline()
                                                             if row[0:9] == 'HeaderSize'[0:9]:
                                                                     # Old LIDAR
-                                                                    # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
+                                                                    # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down". I think Eve was right.
                                                                     # Date index is "end of interval"
                                                                     headersize = int(row.split('=')[1])
                                                                     mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
@@ -298,6 +298,7 @@ class dataset:
                                                                     df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
                                                                                      encoding='cp1252')
                                                                     df = df.filter(like='Z-wind (m/s)')
+                                                                    df = -df # Positive UP
                                                                     dfh = df.columns.tolist()
                                                                     heights = [int(i.split('m')[0]) for i in dfh]
 
@@ -312,6 +313,7 @@ class dataset:
                                                             elif row[0:9] == 'CSV Converter'[0:9]:
                                                                     # New LIDAR
                                                                     # Date index is "beginning of interval". This will be modified below.
+                                                                    # Manual says "positive up" (ZephIR-Waltz-Manual pdf p. 55)
                                                                     headersize = 1
                                                                     df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
                                                                     # Align index to "end of interval":
@@ -335,8 +337,6 @@ class dataset:
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
 
                                                                     df = df.filter(like='Vertical Wind Speed')
-                                                                    df = -df # Fix "positive-up" mismatch
-
                                                                     dfh = df.columns.tolist()
                                                                     h = [i.split(' ')[5] for i in dfh]
                                                                     heights = [int(i.split('m')[0]) for i in h]

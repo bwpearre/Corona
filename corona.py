@@ -239,14 +239,13 @@ class CoronaBrowser(tk.Frame):
                         self.rmplButton['state'] = 'normal'
                         self.useNewRegressionButton['state'] = 'disabled'
 
-                        #try:
-                        if True:
+                        try:
                                 self.model = keras.models.load_model('model')
                                 self.doRunPredictorButton['state'] = 'normal'
                                 print('Loaded last saved z-wind prediction model.')
 
-                        #except:
-                        #        print('No z-wind prediction model found...')
+                        except:
+                                print('No z-wind prediction model found...')
                 
                         
                         self.saveButton['state'] = 'normal'
@@ -431,13 +430,16 @@ class CoronaBrowser(tk.Frame):
                 model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(15, 5, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.MaxPooling1D(2))
                 model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                model.add(tf.keras.layers.Conv1D(20, 8, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.Dense(7, activation='sigmoid'))
                 model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Flatten())

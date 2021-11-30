@@ -2,5 +2,11 @@ corona.html
 *.hob
 *.hproj
 *.csv
-*~
-#*#
+**/*~
+**/.#*
+**/#*#
+data
+bug.py
+scratch
+__pycache__
+model*

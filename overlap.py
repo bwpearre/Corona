@@ -75,7 +75,7 @@ for round in {0, 1}:
                     if row[0:9] == 'HeaderSize'[0:9]:
                         
                         # Old LIDAR
-                        # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down"
+                        # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down". I think Eve was right.
                         # Timestamps are "end of interval"
 
                         headersize = int(row.split('=')[1])
@@ -93,6 +93,7 @@ for round in {0, 1}:
                                          encoding='cp1252')
                         print(f'          Date range {df.index[0]}   --   {df.index[-1]}')
                         df = df.filter(like='Z-wind (m/s)')
+                        df = -df # Positive UP
                         dfh = df.columns.tolist()
                         heights = [int(i.split('m')[0]) for i in dfh]
 
@@ -123,7 +124,7 @@ for round in {0, 1}:
                         # FUCK THOSE FUCKING RATFUCKERS
                         df.replace(inplace=True, to_replace=9998, value=np.NaN)
                         df.replace(inplace=True, to_replace=9999, value=np.NaN)
-                        df = -df[df.columns[::-1]] # Make column order the same for old and new, and fix positive-up mismatch
+                        df = df[df.columns[::-1]] # Make column order the same for old and new
 
                         dfh = df.columns.tolist()
                         h = [i.split(' ')[5] for i in dfh]
