@@ -86,10 +86,8 @@ class CoronaBrowser(tk.Frame):
                 self.no_temperature_correction_check = True
                 #self.model = tf.keras.models.load_model('model')
                 #self.loadFile(filename='data/20310992-2021-08.csv')
-                self.loadFile(filename='data/20311010-2021-10.csv')
-                #self.loadFile(filename='data/trunc.csv')
-                #self.loadFile(filename='data/20121725.csv')                
-
+                #self.loadFile(filename='data/2021-12 MVCO ASIT 20121725 (20121679) (14d).csv')
+                self.loadFile(filename='data/2021-12 MVCO ASIT (20311010) (32d).csv')
 
         def event_detection_enabled(self, state):
                 if state:
@@ -428,16 +426,10 @@ class CoronaBrowser(tk.Frame):
                 model = tf.keras.models.Sequential()
                 model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
                 model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.MaxPooling1D(3))
                 model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(2))
-                model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(2))
-                model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(20, 8, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(2))
+                model.add(tf.keras.layers.MaxPooling1D(3))
                 model.add(tf.keras.layers.Dropout(0.5))
                 model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
                 model.add(tf.keras.layers.Dense(7, activation='sigmoid'))
@@ -699,13 +691,49 @@ class CoronaBrowser(tk.Frame):
                 df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean() # .std(), .max(), etc...
                 
                 #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
-                whoi_interp = d.whoi
+                whoi_interp = d.whoi.filter(like='Z-wind (m/s)')
 
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp, how='left')
                 cor = df.corr()
-                
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
+
+                if False:
+                        cor_errors = d.whoi.corr()
+                        cor_error_8 = cor_errors.loc[:,'e8'].drop({'e8','e9'})
+                        cor_error_9 = cor_errors.loc[:,'e9'].drop({'e8','e9'})
+                        # List interesting indices, in order of interestingness:
+                        corVe8 = cor_error_8.sort_values(ascending = False, key = lambda x: abs(x))
+                        corVe9 = cor_error_9.sort_values(ascending = False, key = lambda x: abs(x))
+                        error_n = d.whoi.filter(items={'e8', 'e9'}).sum(axis=0)
+                        print(f'Correlations with error 9998 (n={error_n["e8"]}):\n{corVe8}')
+                        print(f'Correlations with error 9999 (n={error_n["e9"]}):\n{corVe9}')
+                        # This is done manually:
+                        e8i = ('Proportion Of Packets With Rain (%)', 'Horizontal Wind Speed Std. Dev. (m/s) at 127m', 'Met Pressure (mbar)', 'TI at 127m')
+                        e9i = ('Packets in Average at 97m', 'Horizontal Wind Speed Std. Dev. (m/s) at 38m', 'Proportion Of Packets With Rain (%)', 'Met Wind Speed (m/s)')
+                        plt.figure('error 8', figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.5))
+                        plt.clf()
+                        counter = 0
+                        for i in e8i:
+                                counter += 1
+                                ax = plt.subplot(2, 2, counter)
+                                ind = d.whoi.index[d.whoi['e8'] > -1]
+                                plt.scatter(x = d.whoi[i].loc[ind] + (np.random.rand(*d.whoi[i].loc[ind].shape) - 0.5), y = d.whoi['e8'].loc[ind] + (np.random.rand(*d.whoi[i].loc[ind].shape) - 0.5), s=1, c='black')#, label=f'corr={r_value:.2g}, λ={slope:.2g}, s={std_err:.2g}, p={p_value:.2g}')
+                                plt.xlabel(i)
+                                plt.ylabel('Error 8 count')
+                                plt.title(f'Correlation = {corVe8[i]:.2g}')
+                        plt.figure('error 9', figsize=(self.screendims_inches[0]*0.5, self.screendims_inches[1]*0.5))
+                        plt.clf()
+                        counter = 0
+                        for i in e9i:
+                                counter += 1
+                                ax = plt.subplot(2, 2, counter)
+                                ind = d.whoi.index[d.whoi['e9'] > -1]
+                                plt.scatter(x = d.whoi[i].loc[ind] + (np.random.rand(*d.whoi[i].loc[ind].shape) - 0.5), y = d.whoi['e9'].loc[ind] + (np.random.rand(*d.whoi[i].loc[ind].shape) - 0.5), s=1, c='black')#, label=f'corr={r_value:.2g}, λ={slope:.2g}, s={std_err:.2g}, p={p_value:.2g}')
+                                plt.xlabel(i)
+                                plt.ylabel('Error 9 count')
+                                plt.title(f'Correlation = {corVe9[i]:.2g}')
+                                
 
                 plt.figure('height')
                 plt.clf()
@@ -716,7 +744,7 @@ class CoronaBrowser(tk.Frame):
                 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
-                print(f'Correlations: {corVs}')
+                print(f'Correlations:\n{corVs}')
 
                 # Show ones above the threshold?
                 interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]

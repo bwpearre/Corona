@@ -297,8 +297,10 @@ class dataset:
 
                                                                     df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
                                                                                      encoding='cp1252')
+                                                                    
                                                                     df = df.filter(like='Z-wind (m/s)')
                                                                     df = -df # Positive UP
+                                                                    
                                                                     dfh = df.columns.tolist()
                                                                     heights = [int(i.split('m')[0]) for i in dfh]
 
@@ -319,11 +321,14 @@ class dataset:
                                                                     # Align index to "end of interval":
                                                                     df.set_index(df.index.to_series() + dt.timedelta(minutes=10), inplace=True)
 
-                                                                    # FUCK THOSE FUCKING RATFUCKERS
-                                                                    df.replace(inplace=True, to_replace=9998, value=np.NaN)
-                                                                    df.replace(inplace=True, to_replace=9999, value=np.NaN)
+                                                                    # For debugging: the Checksum column contains a huge thing that makes printing the df difficult
+                                                                    df.drop(list(df.filter(like = 'Checksum')), axis = 1, inplace = True)
 
-                                                                    #df = df[df.columns.drop(list(df.filter(like='Checksum')))] # Checksum column is annoying, and useless for now
+                                                                    # Get heights
+                                                                    dfh = df.filter(like='Vertical Wind Speed').columns.tolist()
+                                                                    h = [i.split(' ')[5] for i in dfh]
+                                                                    heights = [int(i.split('m')[0]) for i in h]
+
                                                                     # Actually, let's just get rid of everything but what we currently care about:
                                                                     latlon = df['GPS'].iat[0].split()
                                                                     latitude = float(latlon[0])
@@ -336,12 +341,27 @@ class dataset:
                                                                             self.distance_max = dist
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
 
-                                                                    df = df.filter(like='Vertical Wind Speed')
-                                                                    dfh = df.columns.tolist()
-                                                                    h = [i.split(' ')[5] for i in dfh]
-                                                                    heights = [int(i.split('m')[0]) for i in h]
-
+                                                                    # Rename columns to match old LIDAR
                                                                     df.rename(inplace=True, columns=column_rename)
+
+                                                                    # Let's find timestamps with error codes and put them in some new columns:
+                                                                    vws = set(column_rename.values())
+
+                                                                    df['e8'] = 0
+                                                                    df['e9'] = 0
+                                                                    for col in vws:
+                                                                            df['e8'] += (df[col] == 9998).astype(int)
+                                                                            df['e9'] += (df[col] == 9999).astype(int)
+
+                                                                    # FUCK THOSE FUCKING RATFUCKERS
+                                                                    df.replace(inplace=True, to_replace=9998, value=np.NaN)
+                                                                    df.replace(inplace=True, to_replace=9999, value=np.NaN)
+
+                                                                    #dfh = df.columns.tolist()
+                                                                    #heights = [int(i.split('m')[0]) for i in dfh]
+
+                                                                    # For pre-rename
+                                                                    #pdb.set_trace()
 
                                                             else:
                                                                     print('Could not get header size. Assuming 0.')
@@ -426,9 +446,9 @@ class dataset:
             
                 
                 # Get the final list of heights:
-                dfh = self.whoi.columns.tolist()
+                dfh = self.whoi.filter(like='Z-wind (m/s)').columns.tolist()
                 self.heights = [int(i.split('m')[0]) for i in dfh]
-                #print(f'Final LIDAR heights: {self.heights}')
+                print(f'Final LIDAR heights: {self.heights}')
 
                 print('*** NOT Interpolating 20-minute to 10-minute data...')
                 #self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
@@ -447,6 +467,7 @@ class dataset:
 
                 # Approximate mode of data: usually 0 unless we quantise it
                 self.v_mode = scipy.stats.mode((self.volts*10).astype(int))[0][0][0]/10
+                self.volts = self.volts - self.v_mode
                 if self.temperature_present:
                         t = ' after temperature correction'
                 else:
