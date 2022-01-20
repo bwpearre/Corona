@@ -95,7 +95,7 @@ def loadFile(filename):
 
 
 
-    return times, volts, temps, location
+    return times, volts, temps, location, sn
 
 
 p = Path(r'data').glob('*.csv')
@@ -104,8 +104,8 @@ files = [x for x in p if x.is_file()]
 date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
 for f in files:
     try:
-        times, volts, temps, location = loadFile(f)
+        times, volts, temps, location, serial = loadFile(f)
         print(f'{f.name} ---> {location} {times[0].strftime("%Y-%m")} ({(times[-1]-times[0]).days}d).csv')
-        f.rename(f'{location} {times[0].strftime("%Y-%m")} ({(times[-1]-times[0]).days}d).csv')
+        f.rename(f'{times[0].strftime("%Y-%m")} {location} ({serial}) ({(times[-1]-times[0]).days}d).csv')
     except BaseException as e:
         print(f'Exception on "{f.name}": {e}')
