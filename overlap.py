@@ -184,7 +184,7 @@ diff.plot()
 print(f'Mean difference:\n{diff.mean()}\nStandard deviation:\n{diff.std()}')
 
 cor = np.diag(whoi.corr(), len(heights))
-print(f'Correlations between old and new: {cor}')
+print(f'Correlations between old and new:\n{cor.T}')
 
 fig = plt.figure(num='map')
 fig.clf()

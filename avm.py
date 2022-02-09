@@ -168,7 +168,11 @@ class dataset:
                                     except ValueError:
                                             print(f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{date_format}".')
                                             continue;
-                                    volts.append(float(row[voltage_column]))
+                                    try:
+                                            volts.append(float(row[voltage_column]))
+                                    except:
+                                            print(f'  * Line {line_count}: could not parse volts string "{row[voltage_column]}".')
+                                            volts.append(np.NaN)
                                     if self.temperature_present:
                                             temps.append(float(row[self.temperature_present]))
                             else:
@@ -463,7 +467,8 @@ class dataset:
                 self.volts_scaled = self.volts_raw * self.voltageScalingFactor
 
                 # Correct for sensor temperature. Preserves mean value (i.e. not mean-0)
-                self.volts = self.applyTemperatureCorrection()
+                #self.volts = self.applyTemperatureCorrection()
+                self.volts = self.volts_scaled
 
                 # Approximate mode of data: usually 0 unless we quantise it
                 self.v_mode = scipy.stats.mode((self.volts*10).astype(int))[0][0][0]/10

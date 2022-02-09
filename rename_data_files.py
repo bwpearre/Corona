@@ -6,6 +6,7 @@ import pdb
 import datetime as dt
 import pytz
 import time
+import string
 
 def loadFile(filename):
     print(f'----- Loading {filename.name} -----')
@@ -42,9 +43,12 @@ def loadFile(filename):
                     # This is the line with all the header info. Figure out what we have...
                     print(f'   Location = {location} at {latitude}, {longitude}')
                     for column in range(1, len(row)):
-                            serialnumberfound = row[column].find("SEN S/N:")
+                            serialnumberfound = row[column].find("S/N:")
                             if serialnumberfound != -1:
+                                try:
                                     sn = int(row[column][serialnumberfound:].split(":")[1].split(',')[0])
+                                except:
+                                    sn = int(row[column][serialnumberfound:].split(":")[1].translate(str.maketrans('', '', string.punctuation)))
                             if row[column][0:4].lower() == "date":
                                     print(f'      Date found in column {column}.')
                                     date_column = column
@@ -82,30 +86,37 @@ def loadFile(filename):
                         False
                 elif row[date_column] and row[voltage_column] and ((not temperature_present) or row[temperature_present]):
                         try:
-                                t = dt.datetime.strptime(row[date_column], date_format[0]) - timedelta_corona
-                                times.append(timezone_utc.localize(t))
+                            t = dt.datetime.strptime(row[date_column], date_format[0]) - timedelta_corona
+                            times.append(timezone_utc.localize(t))
                         except ValueError:
-                                t = dt.datetime.strptime(row[date_column], date_format[1]) - timedelta_corona
-                                times.append(timezone_utc.localize(t))
+                            print('error 1')
+                            t = dt.datetime.strptime(row[date_column], date_format[1]) - timedelta_corona
+                            times.append(timezone_utc.localize(t))
                         except ValueError:
-                                continue;
-                        volts.append(float(row[voltage_column]))
+                            print('error 2')
+                            continue;
+                        try:
+                            volts.append(float(row[voltage_column]))
+                        except:
+                            print(f'Exception at line {line_count}')
+                            volts.append(np.NaN)
                         if temperature_present:
-                                temps.append(float(row[temperature_present]))
+                            temps.append(float(row[temperature_present]))
 
 
 
     return times, volts, temps, location, sn
 
 
-p = Path(r'data').glob('*.csv')
+p = Path(r'.').glob('*.csv')
 files = [x for x in p if x.is_file()]
 
 date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
 for f in files:
-    try:
+#    try:
         times, volts, temps, location, serial = loadFile(f)
-        print(f'{f.name} ---> {location} {times[0].strftime("%Y-%m")} ({(times[-1]-times[0]).days}d).csv')
-        f.rename(f'{times[0].strftime("%Y-%m")} {location} ({serial}) ({(times[-1]-times[0]).days}d).csv')
-    except BaseException as e:
-        print(f'Exception on "{f.name}": {e}')
+        newname = f'{times[0].strftime("%Y-%m")} {location} {serial} ({(times[-1]-times[0]).days}d).csv'
+        print(f'{f.name} ---> {newname}')
+        f.rename(newname)
+#    except BaseException as e:
+#        print(f'Exception on "{f.name}": {e}')

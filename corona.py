@@ -87,7 +87,7 @@ class CoronaBrowser(tk.Frame):
                 #self.model = tf.keras.models.load_model('model')
                 #self.loadFile(filename='data/20310992-2021-08.csv')
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20121725 (20121679) (14d).csv')
-                self.loadFile(filename='data/2021-12 MVCO ASIT (20311010) (32d).csv')
+                #self.loadFile(filename='data/2021-12 MVCO ASIT 20311010 (13d).csv')
 
         def event_detection_enabled(self, state):
                 if state:
