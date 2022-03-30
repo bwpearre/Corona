@@ -206,13 +206,14 @@ class dataset:
                 firstfnum = times[0].strftime("%Y_%j")
                 lastfnum = times[-1].strftime("%Y_%j")
 
+                print(f'Times[0] is {times[0]}, times[-1] is {times[-1]}')
                 date_format_lidar = '%Y/%m/%d %H:%M'
 
 
                 # Convert new to old column names:
-                column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)'}
+                column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 68m': '77m Z-wind (m/s)'}
 
-                #print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
+                print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
 
                 #lastfname = self.datafile.parent / 'whoi' / 'lidar' / f'asit.lidar.{times[-1].strftime("%Y_%j")}.sta'
                 # {<directory>: [ <filename prefix>, <filename suffix>, <invoke special code for WHOI's LIDAR files> ]}

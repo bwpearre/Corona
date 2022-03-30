@@ -71,10 +71,10 @@ class CoronaBrowser(tk.Frame):
                 self.grid()
                 self.createWidgets()
 
-                        
+                
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)') # BUG if there's only one, so need 2 until fixed.
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)', 'Packets in Average') # BUG if there's only one, so need 2 until fixed.
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
@@ -88,6 +88,7 @@ class CoronaBrowser(tk.Frame):
                 #self.loadFile(filename='data/20310992-2021-08.csv')
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20121725 (20121679) (14d).csv')
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20311010 (13d).csv')
+                self.loadFile(filename='data/2022-02 MVCO ASIT 20311010 (27d).csv')
 
         def event_detection_enabled(self, state):
                 if state:
@@ -258,21 +259,27 @@ class CoronaBrowser(tk.Frame):
                 # Set up for plotting...
                 self.legends = {p:[] for p in self.plots}
                 self.z = {p:[] for p in self.plots}
-                        
+
                 # Build a list of things to plot:
                 for i,t in enumerate(d.whoi.columns):
-                        #print(f' Looking at column {i} : {t}')
+                        print(f' Looking at column {i} : {t}')
                         for toplot in self.plots:
-                                #print(f'Looking for "{toplot}" in "{t}"')
+                                print(f'Looking for "{toplot}" in "{t}"')
                                 if toplot in t:
-                                        #print('   ...found')
+                                        print('   ...found')
                                         #print(self.legends)
                                         self.legends[toplot].append(t)
-                                        #print(f'Adding: self.legends[{toplot}].append({t})')
-                                        try:
-                                                self.z[toplot].append(int(t.split('m', 1)[0]))
-                                        except:
-                                                None
+                                        print(f'Adding: self.legends[{toplot}].append({t})')
+                                        #try:
+                                        integers = re.findall(r'\d+', t)
+                                        print(integers)
+                                        if len(integers):
+                                                n = int(integers[0])
+                                                if not n in self.z[toplot]:
+                                                        self.z[toplot].append(n)
+                                        #except:
+                                        #        print('              ...exception?')
+                                        #        None
                 for toplot in self.plots:
                         if len(self.legends[toplot]):
                                 self.whoi_graphs += 1
@@ -443,7 +450,7 @@ class CoronaBrowser(tk.Frame):
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator, workers=12, epochs=20)
+                model.fit(generator, workers=12, epochs=50)
                 self.doRunPredictorButton['state'] = 'normal'
 
                 model.save('model')
