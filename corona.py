@@ -88,7 +88,9 @@ class CoronaBrowser(tk.Frame):
                 #self.loadFile(filename='data/20310992-2021-08.csv')
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20121725 (20121679) (14d).csv')
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20311010 (13d).csv')
-                self.loadFile(filename='data/2022-02 MVCO ASIT 20311010 (27d).csv')
+                #self.loadFile(filename='data/2022-02 MVCO ASIT 20311010 (27d).csv')
+                #self.loadFile(filename='data/2022-03 MVCO ASIT 20311010 (30d).csv')
+                self.loadFile(filename='data/latest.csv')
 
         def event_detection_enabled(self, state):
                 if state:
@@ -262,17 +264,17 @@ class CoronaBrowser(tk.Frame):
 
                 # Build a list of things to plot:
                 for i,t in enumerate(d.whoi.columns):
-                        print(f' Looking at column {i} : {t}')
+                        #print(f' Looking at column {i} : {t}')
                         for toplot in self.plots:
-                                print(f'Looking for "{toplot}" in "{t}"')
+                                #print(f'Looking for "{toplot}" in "{t}"')
                                 if toplot in t:
-                                        print('   ...found')
+                                        ##print('   ...found')
                                         #print(self.legends)
                                         self.legends[toplot].append(t)
-                                        print(f'Adding: self.legends[{toplot}].append({t})')
+                                        #print(f'Adding: self.legends[{toplot}].append({t})')
                                         #try:
                                         integers = re.findall(r'\d+', t)
-                                        print(integers)
+                                        #print(integers)
                                         if len(integers):
                                                 n = int(integers[0])
                                                 if not n in self.z[toplot]:
@@ -450,7 +452,7 @@ class CoronaBrowser(tk.Frame):
                               loss=loss_fn,
                               metrics=['accuracy'])
 
-                model.fit(generator, workers=12, epochs=50)
+                model.fit(generator, workers=12, epochs=20)
                 self.doRunPredictorButton['state'] = 'normal'
 
                 model.save('model')

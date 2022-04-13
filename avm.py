@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import pdb
+import re
 
 def exponential(x, a, b, c):
         #return a + b * x + c * np.square(x)
@@ -26,6 +27,8 @@ class dataset:
                 self.filename = filename
                 self.browser = browser
                 self.sensor_serial_number = np.NaN
+
+                self.loadSensors()
                 
                 # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
                 self.fit = mat([[-0.020992708021557917],
@@ -46,7 +49,30 @@ class dataset:
                 self.loadWHOI(self.times)
 
 
-                
+
+        # Read the sensor list, which connects serial numbers with 4-D locations and gain settings etc. Unsorted, since faster to Stalinsort and then Quicksort.
+        def loadSensors(self):
+                filename='data/sensors.csv'
+                self.sensors = pd.read_csv(filename, skipinitialspace=True, parse_dates=['Date'], index_col='Date')
+
+
+
+        # Pull the first number out of a string. If none found, return NaN
+        def leading_numeric(self, str):
+                str = str.strip()
+                if str is None:
+                        return np.NaN
+                else:
+                        digits = re.search("[+-]?\d*(\.\d+)?", str).group()
+                        if digits is None:
+                                print(f'Could not get digits out of "{str}"')
+                                pdb.set_trace()
+                                return np.NaN
+                        if digits.isdigit():
+                                return float(digits)
+                        else:
+                                return np.NaN
+        
         # Much faster loading than pandas (is it really worth it? It
         # was during the early stage of this project when loading was
         # by far the slowest thing). Note that Python grows lists
@@ -59,12 +85,14 @@ class dataset:
 
             self.datafile = filename
 
-            # Define the weird date format, or perhaps the new date format that I'm hoping for...
-            date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
+            # Define the legal date formats. Just error out if these fail.
+            date_format = ['%m/%d/%Y %H:%M:%S', '%m/%d/%y %I:%M:%S %p'] # , '%m/%d/%y %H:%M' ,'%m/%d/%Y %H:%M' ]
                 
             # Get the number of lines in the file so we can do a perfect progress bar...
             start = time.perf_counter()
             print(f'----- Loading {filename} -----')
+            errors_incomplete = 0
+            errors_missing = 0
             self.browser.waitbar_indeterminate_start('Checking file size...')
             num_lines = sum(1 for line in open(filename))
             self.browser.waitbar_indeterminate_done()
@@ -91,26 +119,20 @@ class dataset:
                         
                         if still_in_header:
                             foo = row[0].split('=')
-                            if 'location' in foo[0].lower():
-                                self.location = foo[1].strip()
-                            elif 'latitude' in foo[0].lower():
-                                self.latitude = float(foo[1])
-                            elif 'longitude' in foo[0].lower():
-                                self.longitude = float(foo[1])
-
-                            elif foo[0][0]=='#':
-                                # This is the line with all the header info. Figure out what we have...
-                                print(f'   Location = {self.location} at {self.latitude}, {self.longitude}')
+                            if foo[0][0]=='#':
                                 for column in range(1, len(row)):
-                                        serialnumberfound = row[column].find("SEN S/N:")
+                                        serialnumberfound = row[column].find("S/N:")
                                         if serialnumberfound != -1:
-                                                sn = int(row[column][serialnumberfound:].split(":")[1].split(',')[0])
-                                                if np.isnan(self.sensor_serial_number):
-                                                        print(f'      Found sensor serial number {sn}')
+                                                sn = self.leading_numeric(row[column][serialnumberfound:].split(":")[1].split(',')[0])
+                                                sn = int(sn)
+                                                print(f'      Serial number {sn} found in column {column}.')
                                                 if np.isnan(self.sensor_serial_number) or sn == self.sensor_serial_number:
                                                         self.sensor_serial_number = sn
                                                 else:
                                                         raise(f"Conflicting sensor serial numbers {sn} and {self.sensor_serial_number}")
+                                                self.sensor = self.sensors[self.sensors['LGR S/N'] == sn].sort_values(by='Date', ascending=False).iloc[0]
+                                                print(f'      Location = {self.sensor["Location"]} at {self.sensor["Latitude"]}, {self.sensor["Longitude"]}')
+
                                         if row[column][0:4].lower() == "date":
                                                 print(f'      Date found in column {column}.')
                                                 date_column = column
@@ -156,27 +178,37 @@ class dataset:
                         # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                         else: # still_in_header = False
                             if len(row) <= max([date_column, voltage_column, self.temperature_present]):
-                                    print(f'  ***** Line {line_count}: row is incomplete. Corrupt/incomplete file? *****')
+                                    errors_incomplete += 1
+                                    errors_incomplete_line = line_count
+                                    errors_incomplete_example = row
                             elif row[date_column] and row[voltage_column] and ((not self.temperature_present) or row[self.temperature_present]):
+                                for date_f in date_format:
+                                    #print(f'Date format "{date_f}"')
+                                    error_count = 0
                                     try:
-                                            t = dt.datetime.strptime(row[date_column], date_format[0]) - timedelta_corona
-                                            times.append(timezone_utc.localize(t))
+                                        t = dt.datetime.strptime(row[date_column], date_f) - timedelta_corona
+                                        #print(f'success; date is {t}')
+                                        continue
                                     except ValueError:
-                                            print(f"Date format '{date_format[0]}' doesn't work; trying '{date_format[1]}'")
-                                            t = dt.datetime.strptime(row[date_column], date_format[1]) - timedelta_corona
-                                            times.append(timezone_utc.localize(t))
-                                    except ValueError:
-                                            print(f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{date_format}".')
-                                            continue;
-                                    try:
+                                        error_count += 1
+                                        if error_count == len(date_format):
+                                                print(f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{date_format}".')
+                                times.append(timezone_utc.localize(t))
+                                try:
                                             volts.append(float(row[voltage_column]))
-                                    except:
+                                except:
                                             print(f'  * Line {line_count}: could not parse volts string "{row[voltage_column]}".')
                                             volts.append(np.NaN)
-                                    if self.temperature_present:
+                                if self.temperature_present:
                                             temps.append(float(row[self.temperature_present]))
                             else:
-                                    print(f'  * Line {line_count} "{row}" contains missing values. Ignoring the row.')
+                                    errors_missing += 1
+                                    errors_missing_line = line_count
+                                    errors_missing_example = row
+                if errors_missing:
+                        print(f'  ***** {errors_missing} errors like: Line {errors_missing_line} "{errors_missing_example}" is missing values. Ignoring the row.')
+                if errors_incomplete:
+                        print(f'  ***** {errors_incomplete} errors like: Line {errors_incomplete_line}: "{errors_incomplete_example}" is incomplete. Corrupt/incomplete file? *****')
 
 
 
@@ -254,7 +286,7 @@ class dataset:
                             self.browser.waitbar_update(day_i/2 + round*n_days/2)
 
                             fnum = (times[0] + dt.timedelta(days=day_i)).strftime("%Y_%j")
-                            print(f' Loading WHOI files {fnum} ({(times[0] + dt.timedelta(days=day_i)).strftime("%Y-%m-%d")}) (round {round})...')
+                            #print(f' Loading WHOI files {fnum} ({(times[0] + dt.timedelta(days=day_i)).strftime("%Y-%m-%d")}) (round {round})...')
 
                             daily_data = []
 
@@ -271,7 +303,7 @@ class dataset:
                                                     # we've got an extant filename
                                                     break
 
-                                    print(f'      Loading {fname}')
+                                    #print(f'      Loading {fname}')
 
                                     if fname.is_file():
                                             if fileset == 'lidar':
@@ -283,15 +315,14 @@ class dataset:
                                                                     # Manufacturer (via Ted) says "positive up", Eve Cinquino says "positive down". I think Eve was right.
                                                                     # Date index is "end of interval"
                                                                     headersize = int(row.split('=')[1])
-                                                                    mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None,
-                                                                                      encoding='cp1252')
+                                                                    mdf = pd.read_csv(fname, sep='=', nrows=headersize-1, index_col = 0, header=None, encoding='cp1252')
                                                                     timezone = mdf.loc['timezone', 1]
                                                                     location = mdf.loc['Location', 1].strip()
                                                                     latitude, longitude = self.whoi_lidar_old_latlon_parse(mdf.loc['GPS Location', 1])
-                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (latitude, longitude)).m
-                                                                    print(f'            Location: {location}, {int(np.round(dist))} m from AVM')
+                                                                    dist = geopy.distance.distance((self.sensor["Latitude"], self.sensor["Longitude"]), (latitude, longitude)).m
+                                                                    #print(f'            Location: {location}, {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
+                                                                        print(f'            ***** {fname}: Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
                                                                     if dist > self.distance_max:
                                                                             self.distance_max = dist
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
@@ -338,10 +369,10 @@ class dataset:
                                                                     latlon = df['GPS'].iat[0].split()
                                                                     latitude = float(latlon[0])
                                                                     longitude = float(latlon[1])
-                                                                    dist = geopy.distance.distance((self.latitude, self.longitude), (latitude, longitude)).m
-                                                                    print(f'            Location: {int(np.round(dist))} m from AVM')
+                                                                    dist = geopy.distance.distance((self.sensor["Latitude"], self.sensor["Longitude"]), (latitude, longitude)).m
+                                                                    #print(f'            Location: {int(np.round(dist))} m from AVM')
                                                                     if dist > 1000:
-                                                                        print(f'            ***** Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
+                                                                        print(f'            ***** {fname}: Distance between LIDAR and AVM is {dist/1000:.1f} km *****')
                                                                     if dist > self.distance_max:
                                                                             self.distance_max = dist
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
@@ -430,7 +461,7 @@ class dataset:
 
                 fig = plt.figure(num='map')
                 fig.clf()
-                locs = np.array([[self.latitude, self.longitude]], ndmin=2)
+                locs = np.array([[self.sensor["Latitude"], self.sensor["Longitude"]]], ndmin=2)
                 locs = np.append(locs, lidarloc, axis=0)
                 
                 terrain = cimgt.GoogleTiles(style='satellite')
@@ -441,7 +472,7 @@ class dataset:
                 gl.xlines = False
                 gl.ylines = False
                 
-                self.map.plot(self.longitude, self.latitude, marker='o', color='yellow', markersize=12,
+                self.map.plot(self.sensor["Longitude"], self.sensor["Latitude"], marker='o', color='yellow', markersize=12,
                               alpha=1, transform=ccrs.Geodetic())
                 for i in range(lidarloc.shape[0]):
                         self.map.plot(lidarloc[i,1], lidarloc[i,0], marker='o', color='red', markersize=4,
@@ -479,6 +510,12 @@ class dataset:
                 else:
                         t = ''
                 print(f'  Voltage: mode is roughly {self.v_mode} V{t}')
+
+                # Ted's idea: filter those voltage extrema:
+                voltage_extreme = 0.5
+                self.volts[self.volts > voltage_extreme] = np.NaN
+                self.volts[self.volts < -voltage_extreme] = np.NaN
+                #self.volts.all[self.volts < 0.01 and self.volts > -0.01] = np.NaN
 
                 
         def setVoltageScalingFactor(self, vsf):
@@ -561,4 +598,3 @@ class dataset:
 
             return latitude, longitude
 
-    

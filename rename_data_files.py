@@ -15,7 +15,7 @@ def loadFile(filename):
     temps = []
 
     # Define the weird date format, or perhaps the new date format that I'm hoping for...
-    date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
+    date_format = ['%m/%d/%Y %H:%M:%S', '%m/%d/%y %I:%M:%S %p'] # , '%m/%d/%y %H:%M' ,'%m/%d/%Y %H:%M' ]
 
     line_count = 0
     date_column = -1
@@ -85,16 +85,16 @@ def loadFile(filename):
                 if len(row) <= max([date_column, voltage_column, temperature_present]):
                         False
                 elif row[date_column] and row[voltage_column] and ((not temperature_present) or row[temperature_present]):
-                        try:
-                            t = dt.datetime.strptime(row[date_column], date_format[0]) - timedelta_corona
-                            times.append(timezone_utc.localize(t))
-                        except ValueError:
-                            print('error 1')
-                            t = dt.datetime.strptime(row[date_column], date_format[1]) - timedelta_corona
-                            times.append(timezone_utc.localize(t))
-                        except ValueError:
-                            print('error 2')
-                            continue;
+                        for date_f in date_format:
+                            #print(f'Date format "{date_f}"')
+                            try:
+                                t = dt.datetime.strptime(row[date_column], date_f) - timedelta_corona
+                                #print(f'success; date is {t}')
+                                continue
+                            except ValueError:
+                                False
+                                #print(f'error parsing "{row[date_column]}" as "{date_f}"')
+                        times.append(timezone_utc.localize(t))
                         try:
                             volts.append(float(row[voltage_column]))
                         except:
@@ -111,11 +111,11 @@ def loadFile(filename):
 p = Path(r'.').glob('*.csv')
 files = [x for x in p if x.is_file()]
 
-date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
+#date_format = ['%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M']
 for f in files:
 #    try:
         times, volts, temps, location, serial = loadFile(f)
-        newname = f'{times[0].strftime("%Y-%m")} {location} {serial} ({(times[-1]-times[0]).days}d).csv'
+        newname = f'{times[0].strftime("%Y-%m-%d")} - {times[-1].strftime("%Y-%m-%d")} {location} {serial}.csv'
         print(f'{f.name} ---> {newname}')
         f.rename(newname)
 #    except BaseException as e:
