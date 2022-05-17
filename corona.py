@@ -74,7 +74,8 @@ class CoronaBrowser(tk.Frame):
                 
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)', 'Packets in Average') # BUG if there's only one, so need 2 until fixed.
+                self.plots_combine = {'Moisture': ('Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)')}
+                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average') # BUG if there's only one, so need 2 until fixed.
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')

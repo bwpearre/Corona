@@ -125,13 +125,14 @@ class dataset:
                                         if serialnumberfound != -1:
                                                 sn = self.leading_numeric(row[column][serialnumberfound:].split(":")[1].split(',')[0])
                                                 sn = int(sn)
-                                                print(f'      Serial number {sn} found in column {column}.')
-                                                if np.isnan(self.sensor_serial_number) or sn == self.sensor_serial_number:
+                                                if np.isnan(self.sensor_serial_number):
                                                         self.sensor_serial_number = sn
+                                                        self.sensor = self.sensors[self.sensors['LGR S/N'] == sn].sort_values(by='Date', ascending=False).iloc[0]
+                                                        print(f'      Location = {self.sensor["Station name"]} at {self.sensor["Latitude"]}, {self.sensor["Longitude"]}')
+                                                elif sn == self.sensor_serial_number:
+                                                        None
                                                 else:
                                                         raise(f"Conflicting sensor serial numbers {sn} and {self.sensor_serial_number}")
-                                                self.sensor = self.sensors[self.sensors['LGR S/N'] == sn].sort_values(by='Date', ascending=False).iloc[0]
-                                                print(f'      Location = {self.sensor["Location"]} at {self.sensor["Latitude"]}, {self.sensor["Longitude"]}')
 
                                         if row[column][0:4].lower() == "date":
                                                 print(f'      Date found in column {column}.')
