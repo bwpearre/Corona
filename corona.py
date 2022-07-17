@@ -75,10 +75,12 @@ class CoronaBrowser(tk.Frame):
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
                 self.plots_combine = {'Moisture': ('Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)')}
-                self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average') # BUG if there's only one, so need 2 until fixed.
+                self.plots = {'Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average'} # BUG if there's only one, so need 2 until fixed.
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
+
+                self.plots_raw = {'40m Z-wind (m/s)', '187m Z-wind (m/s)'}
 
                 self.debug_seq()
 
@@ -91,7 +93,8 @@ class CoronaBrowser(tk.Frame):
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20311010 (13d).csv')
                 #self.loadFile(filename='data/2022-02 MVCO ASIT 20311010 (27d).csv')
                 #self.loadFile(filename='data/2022-03 MVCO ASIT 20311010 (30d).csv')
-                self.loadFile(filename='data/latest.csv')
+                self.loadFile(filename='data/2022-05-01 - 2022-06-01 MVCO ASIT 20311010.csv')
+                #self.loadFile(filename='data/latest')
 
         def event_detection_enabled(self, state):
                 if state:
@@ -286,6 +289,8 @@ class CoronaBrowser(tk.Frame):
                 for toplot in self.plots:
                         if len(self.legends[toplot]):
                                 self.whoi_graphs += 1
+
+                self.whoi_graphs += len(self.plots_raw)
 
                         
         def plotEvents(self, d=0):
@@ -644,6 +649,7 @@ class CoronaBrowser(tk.Frame):
                         axes[1].set_xlabel('Time')
 
                 ###### WHOI data: ######
+                colour_lookup = {}
                 if self.whoi_graphs:
                         n = nsubplots_base
                         for toplot in self.plots:
@@ -658,15 +664,23 @@ class CoronaBrowser(tk.Frame):
                                         order = np.argsort(self.z[toplot])
                                         z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
                                         zz = np.fromiter(z, dtype=float)
-                                        colours = plt.get_cmap('viridis')(X=zz)
+                                        colours = plt.get_cmap('cool')(X=zz) # viridis
                                         colour = 0
                                         
                                         for i in [self.legends[toplot][x] for x in order]:
                                                 #print(f' axes {n}, order {i}')
+                                                colour_lookup[i] = colours[colour] # Keep track for later...
                                                 axes[n].plot(d.whoi.index, d.whoi[i],
                                                              label=i, color=colours[colour])
                                                 colour += 1
                                 #axes[n].legend()
+                                axes[n].set_xlim(d.times[0], d.times[-1])
+                                n += 1
+                        for toplot in self.plots_raw:
+                                axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
+                                axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
+                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=1, color=colour_lookup[toplot])
+                                axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
                                 axes[n].set_xlim(d.times[0], d.times[-1])
                                 n += 1
                 

@@ -19,6 +19,7 @@ def exponential(x, a, b, c):
         #return a + b * x + c * np.square(x)
         return a * np.exp(b*x) + c
 
+voltage_extreme = 0.5
 
 class dataset:
 
@@ -41,6 +42,10 @@ class dataset:
 
 
 
+                # Convert new to old column names:
+                self.column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 68m': '77m Z-wind (m/s)'}
+
+
 
 
                 self.times, self.volts_raw, self.temps = self.loadFileBen(Path(filename))
@@ -50,6 +55,8 @@ class dataset:
 
 
 
+
+                
         # Read the sensor list, which connects serial numbers with 4-D locations and gain settings etc. Unsorted, since faster to Stalinsort and then Quicksort.
         def loadSensors(self):
                 filename='data/sensors.csv'
@@ -233,18 +240,44 @@ class dataset:
 
             return times, volts, temps
 
+        def loadWHOIRaw(self, times):
+                headersize = 2
+                #fname = 'data/Wind_1166@Y2022_M05_D01.CSV'
+                #dateparse = lambda x: dt.datetime.strptime(x, '%d-%m-%Y %H:%M:%S')
+                days = sorted({t.date() for t in times})
+                daily_data = []
+
+                for d in days:
+                        fname = self.datafile.parent / 'whoi' / 'lidar_raw' / f'Wind_1166@{d.strftime("Y%Y_M%m_D%d")}.CSV'
+                        if fname.exists():
+                                #print(f' && Loading file "{fname}"...')
+                                m = pd.read_csv(fname, index_col = 1, parse_dates = [1], dayfirst = True,  header = 1, encoding='cp1252')
+                                m.drop(list(m.filter(regex = 'Checksum')), axis = 1, inplace = True)
+                                # FUCK THOSE FUCKING RATFUCKERS
+                                m.replace(inplace=True, to_replace=9998, value=np.NaN)
+                                m.replace(inplace=True, to_replace=9999, value=np.NaN)
+                                df = m.filter(like = 'Vertical Wind Speed', axis = 1)
+                                df.rename(inplace=True, columns=self.column_rename)
+                                #df = -df # Positive UP
+
+                                daily_data.append(df)
+
+                if len(daily_data):
+                        self.whoi_raw = pd.concat(daily_data, copy = False)
+                else:
+                        self.whoi_raw = []
+    
 
         def loadWHOI(self, times):
+
+                self.loadWHOIRaw(times)
 
                 firstfnum = times[0].strftime("%Y_%j")
                 lastfnum = times[-1].strftime("%Y_%j")
 
+                #fname = 'data/Wind_1166@Y2022_M05_D01.CSV'
                 print(f'Times[0] is {times[0]}, times[-1] is {times[-1]}')
                 date_format_lidar = '%Y/%m/%d %H:%M'
-
-
-                # Convert new to old column names:
-                column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)', 'Vertical Wind Speed (m/s) at 68m': '77m Z-wind (m/s)'}
 
                 print(f'  WHOI: start time is {times[0]}, which is file {firstfnum}. Last year,day is {lastfnum}')
 
@@ -341,13 +374,13 @@ class dataset:
                                                                     dfh = df.columns.tolist()
                                                                     heights = [int(i.split('m')[0]) for i in dfh]
 
-                                                                    #column_rename = {}
+                                                                    #self.column_rename = {}
                                                                     #for height in heights:
-                                                                    #    column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
+                                                                    #    self.column_rename[f'Vertical Wind Speed (m/s) at {height}m'] = f'{height}m Z-wind (m/s)'
 
                                                                     # Artisinal nearest-neighbour interpolation ;)
-                                                                    # column_rename[f'Vertical Wind Speed (m/s) at 38m'] = f'40m Z-wind (m/s)'
-                                                                    #print(column_rename)
+                                                                    # self.column_rename[f'Vertical Wind Speed (m/s) at 38m'] = f'40m Z-wind (m/s)'
+                                                                    #print(self.column_rename)
 
                                                             elif row[0:9] == 'CSV Converter'[0:9]:
                                                                     # New LIDAR
@@ -379,10 +412,10 @@ class dataset:
                                                                     lidarloc = np.append(lidarloc, np.array([[latitude, longitude]]), axis=0)
 
                                                                     # Rename columns to match old LIDAR
-                                                                    df.rename(inplace=True, columns=column_rename)
+                                                                    df.rename(inplace=True, columns=self.column_rename)
 
                                                                     # Let's find timestamps with error codes and put them in some new columns:
-                                                                    vws = set(column_rename.values())
+                                                                    vws = set(self.column_rename.values())
 
                                                                     df['e8'] = 0
                                                                     df['e9'] = 0
@@ -513,7 +546,6 @@ class dataset:
                 print(f'  Voltage: mode is roughly {self.v_mode} V{t}')
 
                 # Ted's idea: filter those voltage extrema:
-                voltage_extreme = 0.5
                 self.volts[self.volts > voltage_extreme] = np.NaN
                 self.volts[self.volts < -voltage_extreme] = np.NaN
                 #self.volts.all[self.volts < 0.01 and self.volts > -0.01] = np.NaN
