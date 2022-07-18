@@ -48,9 +48,7 @@ class dataset:
 
 
 
-                self.times, self.volts_raw, self.temps = self.loadFileBen(Path(filename))
-
-                self.applyCorrections()
+                self.loadFileBen(Path(filename))
                 self.loadWHOI(self.times)
 
 
@@ -237,8 +235,16 @@ class dataset:
                             #volts = np.array(volts[0:length])
             volts = np.array(volts[0:length]).reshape((length,1))
 
+            self.times = times
+            self.volts_raw = volts
+            self.temps = temps
+            self.applyCorrections()
 
-            return times, volts, temps
+            if len(temps):
+                    self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze(), 'temps': self.temps}, index = self.times)
+            else:
+                    self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze()}, index = self.times)
+            
 
         def loadWHOIRaw(self, times):
                 headersize = 2
@@ -264,9 +270,10 @@ class dataset:
 
                 if len(daily_data):
                         self.whoi_raw = pd.concat(daily_data, copy = False)
+                        self.whoi_raw = self.whoi_raw.tz_localize('UTC') # assume :}
                 else:
                         self.whoi_raw = []
-    
+                
 
         def loadWHOI(self, times):
 

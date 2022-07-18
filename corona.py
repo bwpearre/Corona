@@ -682,6 +682,7 @@ class CoronaBrowser(tk.Frame):
                                 axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=1, color=colour_lookup[toplot])
                                 axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
                                 axes[n].set_xlim(d.times[0], d.times[-1])
+                                axes[n].set_ylim(-1, 1)
                                 n += 1
                 
                 axes[0].set_title(d.datafile.stem)
@@ -717,10 +718,21 @@ class CoronaBrowser(tk.Frame):
                 #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
                 whoi_interp = d.whoi.filter(like='Z-wind (m/s)')
 
+                b = pd.merge(d.avmpd, d.whoi_raw, left_index = True, right_index = True, how = 'outer')
+                b_interp0 = b.interpolate(method='linear', limit_direction='both', limit = 2)
+
+                pdb.set_trace()
+
+                b_interp = b_interp0.loc[d.avmpd.index]
+
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp, how='left')
                 cor = df.corr()
+
+                corR = b_interp.corr()
+                
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
+                corVR = corR.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
                 if False:
                         cor_errors = d.whoi.corr()
@@ -762,9 +774,16 @@ class CoronaBrowser(tk.Frame):
                 plt.figure('height')
                 plt.clf()
                 plt.plot(d.heights, corV)
+                plt.plot(d.heights, corVR)                
                 plt.xlabel('height (m)')
                 plt.ylabel('correlation with voltage')
+                plt.legend({'Processed', 'Raw'})
+                
                 plt.title(f'{d.datafile.stem}\nMax distance = {int(d.distance_max)} m')
+
+                # Do the scatters with the full set:
+                corV = corVR
+                df = b_interp
                 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
