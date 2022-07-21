@@ -678,11 +678,32 @@ class CoronaBrowser(tk.Frame):
                                 n += 1
                         for toplot in self.plots_raw:
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
+                                #mean = d.whoi_raw[toplot].rolling(20, center=True).mean()
+
+                                # Control the plot of std dev and 95% confidence
+                                centre = False
+                                sz = 40
+
+                                # Unbelievably, rolling() is
+                                # completely fucked: can't just handle
+                                # NaN like a civilised human being, so
+                                # no point in passing it a function
+                                # that handles NaN correctly. But
+                                # min_periods=1 just tosses NaN, and
+                                # count() can sort of clean up the
+                                # mess.
+                                dm = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).mean()
+                                ds = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).std()
+                                dn = np.sqrt(d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=None).count())
+
+                                axes[n].grid(visible=True)
+                                axes[n].plot(d.whoi_raw.index, ds, color = 'r')
                                 axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
-                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=1, color=colour_lookup[toplot])
+                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=2, color=colour_lookup[toplot])
+                                axes[n].fill_between(d.whoi_raw.index, (dm-ds)*1.96/dn, (dm+ds)*1.96/dn, alpha = 0.3, facecolor = 'k')
                                 axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
                                 axes[n].set_xlim(d.times[0], d.times[-1])
-                                axes[n].set_ylim(-1, 1)
+                                axes[n].set_ylim(-2, 2)
                                 n += 1
                 
                 axes[0].set_title(d.datafile.stem)
@@ -720,8 +741,6 @@ class CoronaBrowser(tk.Frame):
 
                 b = pd.merge(d.avmpd, d.whoi_raw, left_index = True, right_index = True, how = 'outer')
                 b_interp0 = b.interpolate(method='linear', limit_direction='both', limit = 2)
-
-                pdb.set_trace()
 
                 b_interp = b_interp0.loc[d.avmpd.index]
 
