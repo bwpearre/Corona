@@ -244,7 +244,7 @@ class dataset:
                     self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze(), 'temps': self.temps}, index = self.times)
             else:
                     self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze()}, index = self.times)
-            
+                    
 
         def loadWHOIRaw(self, times):
                 headersize = 2
@@ -272,9 +272,16 @@ class dataset:
                         self.whoi_raw = pd.concat(daily_data, copy = False)
                         self.whoi_raw = self.whoi_raw.tz_localize('UTC') # assume :}
                 else:
-                        self.whoi_raw = []
-                
+                        False # self.whoi_raw = []
 
+                # Build an all-up structure with raw data: combine,
+                # interpolate, remove original raw LIDAR (rather than
+                # raw AVM since that is spikier):
+                all = pd.merge(self.avmpd, self.whoi_raw, left_index = True, right_index = True, how = 'outer')
+                all.interpolate(method='linear', limit_direction='both', limit = 2, inplace = True)
+                self.all = all.loc[self.avmpd.index]
+                
+                        
         def loadWHOI(self, times):
 
                 self.loadWHOIRaw(times)
@@ -374,7 +381,9 @@ class dataset:
 
                                                                     df = pd.read_csv(fname, sep='\t', header=headersize, parse_dates=[0], index_col=0,
                                                                                      encoding='cp1252')
-                                                                    
+
+                                                                    # Align from END to MIDDLE of interval
+                                                                    df.set_index(df.index.to_series() - dt.timedelta(minutes=5), inplace=True)
                                                                     df = df.filter(like='Z-wind (m/s)')
                                                                     df = -df # Positive UP
                                                                     
@@ -395,8 +404,8 @@ class dataset:
                                                                     # Manual says "positive up" (ZephIR-Waltz-Manual pdf p. 55)
                                                                     headersize = 1
                                                                     df = pd.read_csv(fname, parse_dates = [1], dayfirst = True, index_col = 1, header = 1, encoding='cp1252')
-                                                                    # Align index to "end of interval":
-                                                                    df.set_index(df.index.to_series() + dt.timedelta(minutes=10), inplace=True)
+                                                                    # Align index from BEGINNING to MIDDLE of interval:
+                                                                    df.set_index(df.index.to_series() + dt.timedelta(minutes=5), inplace=True)
 
                                                                     # For debugging: the Checksum column contains a huge thing that makes printing the df difficult
                                                                     df.drop(list(df.filter(like = 'Checksum')), axis = 1, inplace = True)

@@ -412,6 +412,64 @@ class CoronaBrowser(tk.Frame):
                 return r
                 
 
+        def trainPredictor_downsampled(self, d_train=0):
+                if not isinstance(d_train, avm.dataset):
+                        d_train = self.d_test
+                
+                print(f'Training predictor on {d_train.filename} ...')
+
+                # d_validation = avm.dataset(self, 'data/203101010-something.csv')
+                
+                self.n_avm_samples = 360
+                batch_size = 128
+
+                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
+                df = pd.DataFrame(data={'AVM volts': d_train.volts.squeeze()}, index=pd.DatetimeIndex(d_train.times))
+                # Upsample WHOI LIDAR z-wind:
+
+                lidarz = d_train.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d_train.whoi)]
+
+                df2 = lidarz.max(axis='columns').rename('Z-wind')
+                df3 = df.join(df2, how='outer')
+                df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
+                df3 = df3.interpolate(method='linear', limit_direction='both')
+
+                #df3.fillna(MASK, inplace=True)
+                generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
+                                                length = self.n_avm_samples, shuffle = True, batch_size=batch_size)
+
+                model = tf.keras.models.Sequential()
+                model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(3))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
+                model.add(tf.keras.layers.MaxPooling1D(3))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
+                model.add(tf.keras.layers.Dense(7, activation='sigmoid'))
+                model.add(tf.keras.layers.Dropout(0.5))
+                model.add(tf.keras.layers.Flatten())
+                model.add(tf.keras.layers.Dense(1)) # linear output
+
+                loss_fn = tf.keras.losses.MeanSquaredError()
+                adam = tf.keras.optimizers.Adam(learning_rate=0.1, name='adam')
+                model.compile(optimizer='adam',
+                              loss=loss_fn,
+                              metrics=['accuracy'])
+
+                model.fit(generator, workers=12, epochs=20)
+                self.doRunPredictorButton['state'] = 'normal'
+
+                model.save('model')
+                
+                self.runPredictor(model=model, d=d_train)
+
+                # Um... can be called via button, so I guess we need to do it this way too...
+                self.model = model
+                return model
+
+
         def trainPredictor(self, d_train=0):
                 if not isinstance(d_train, avm.dataset):
                         d_train = self.d_test
@@ -694,12 +752,12 @@ class CoronaBrowser(tk.Frame):
                                 # mess.
                                 dm = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).mean()
                                 ds = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).std()
-                                dn = np.sqrt(d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=None).count())
+                                dn = np.sqrt(d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=0).count())
 
                                 axes[n].grid(visible=True)
                                 axes[n].plot(d.whoi_raw.index, ds, color = 'r')
                                 axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
-                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=2, color=colour_lookup[toplot])
+                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=5, color=colour_lookup[toplot])
                                 axes[n].fill_between(d.whoi_raw.index, (dm-ds)*1.96/dn, (dm+ds)*1.96/dn, alpha = 0.3, facecolor = 'k')
                                 axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
                                 axes[n].set_xlim(d.times[0], d.times[-1])
@@ -722,8 +780,8 @@ class CoronaBrowser(tk.Frame):
                 key = 'AVM volts'
                 key_z = 'Predicted Z-wind'
 
-                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={key: d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
+                # Combine AVM data with prediction, if available
+                df = d.avmpd
                 if hasattr(self, 'z_predicted'):
                         df[key_z] = self.z_predicted.squeeze()
                         if corr_interesting_n == 1:
@@ -734,21 +792,17 @@ class CoronaBrowser(tk.Frame):
                 # introduces a bit of weirdness if there's a gap in
                 # LIDAR timestamps (e.g. 3 days missing...) but
                 # *shrug*
+                # df
                 df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean() # .std(), .max(), etc...
                 
                 #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
                 whoi_interp = d.whoi.filter(like='Z-wind (m/s)')
 
-                b = pd.merge(d.avmpd, d.whoi_raw, left_index = True, right_index = True, how = 'outer')
-                b_interp0 = b.interpolate(method='linear', limit_direction='both', limit = 2)
-
-                b_interp = b_interp0.loc[d.avmpd.index]
-
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp, how='left')
                 cor = df.corr()
 
-                corR = b_interp.corr()
+                corR = d.all.corr()
                 
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
                 corVR = corR.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
@@ -801,8 +855,8 @@ class CoronaBrowser(tk.Frame):
                 plt.title(f'{d.datafile.stem}\nMax distance = {int(d.distance_max)} m')
 
                 # Do the scatters with the full set:
-                corV = corVR
-                df = b_interp
+                #corV = corVR
+                #df = b_interp
                 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
