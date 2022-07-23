@@ -75,12 +75,12 @@ class CoronaBrowser(tk.Frame):
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
                 self.plots_combine = {'Moisture': ('Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)')}
-                self.plots = {'Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average'} # BUG if there's only one, so need 2 until fixed.
+                self.plots = ['Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average'] # BUG if there's only one, so need 2 until fixed.
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
 
-                self.plots_raw = {'40m Z-wind (m/s)', '187m Z-wind (m/s)'}
+                self.plots_raw = ['40m Z-wind (m/s)', '187m Z-wind (m/s)']
 
                 self.debug_seq()
 
@@ -419,7 +419,6 @@ class CoronaBrowser(tk.Frame):
                 print(f'Training predictor on {d_train.filename} ...')
 
                 # d_validation = avm.dataset(self, 'data/203101010-something.csv')
-                
                 self.n_avm_samples = 360
                 batch_size = 128
 
@@ -478,50 +477,41 @@ class CoronaBrowser(tk.Frame):
 
                 # d_validation = avm.dataset(self, 'data/203101010-something.csv')
                 
-                self.n_avm_samples = 360
+                self.n_avm_samples = 36
                 batch_size = 128
 
-                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': d_train.volts.squeeze()}, index=pd.DatetimeIndex(d_train.times))
-                # Upsample WHOI LIDAR z-wind:
-
-                lidarz = d_train.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d_train.whoi)]
-
-                df2 = lidarz.max(axis='columns').rename('Z-wind')
-                df3 = df.join(df2, how='outer')
-                df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
-                df3 = df3.interpolate(method='linear', limit_direction='both')
-
-                #df3.fillna(MASK, inplace=True)
-                generator = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'],
+                MASK = 0 # FUCK FUCK FUCK FUCK FUCK
+                
+                d_train_fuckedup = d_train.all.fillna(MASK)
+                generator = TimeseriesGenerator(d_train_fuckedup['AVM volts'], d_train_fuckedup['127m Z-wind (m/s)'],
                                                 length = self.n_avm_samples, shuffle = True, batch_size=batch_size)
 
-                model = tf.keras.models.Sequential()
-                model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
-                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(3))
-                model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.MaxPooling1D(3))
-                model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Conv1D(20, 5, activation='relu'))
-                model.add(tf.keras.layers.Dense(7, activation='sigmoid'))
-                model.add(tf.keras.layers.Dropout(0.5))
-                model.add(tf.keras.layers.Flatten())
-                model.add(tf.keras.layers.Dense(1)) # linear output
+                if hasattr(self, 'model'):
+                        model = self.model
+                else:
+                        model = tf.keras.models.Sequential()
+                        model.add(tf.keras.layers.Reshape((self.n_avm_samples, 1)))
+                        model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                        model.add(tf.keras.layers.MaxPooling1D(2))
+                        model.add(tf.keras.layers.Dropout(0.5))
+                        model.add(tf.keras.layers.Conv1D(10, 5, activation='relu'))
+                        model.add(tf.keras.layers.Dense(5, activation='sigmoid'))
+                        model.add(tf.keras.layers.Dropout(0.5))
+                        model.add(tf.keras.layers.Flatten())
+                        model.add(tf.keras.layers.Dense(1)) # linear output
 
-                loss_fn = tf.keras.losses.MeanSquaredError()
-                adam = tf.keras.optimizers.Adam(learning_rate=0.1, name='adam')
-                model.compile(optimizer='adam',
-                              loss=loss_fn,
-                              metrics=['accuracy'])
+                        loss_fn = tf.keras.losses.MeanSquaredError()
+                        adam = tf.keras.optimizers.Adam(learning_rate=0.1, name='adam')
+                        model.compile(optimizer='adam',
+                                      loss=loss_fn,
+                                      metrics=['accuracy'])
 
-                model.fit(generator, workers=12, epochs=20)
+                model.fit(generator, workers=12, epochs=1000)
                 self.doRunPredictorButton['state'] = 'normal'
 
                 model.save('model')
-                
-                self.runPredictor(model=model, d=d_train)
+
+                self.runPredictor(model=model)
 
                 # Um... can be called via button, so I guess we need to do it this way too...
                 self.model = model
@@ -542,30 +532,21 @@ class CoronaBrowser(tk.Frame):
                 
                 self.n_avm_samples = model.layers[0].output_shape[1]
 
-                # Stick Ted's data into a dataframe. This has already had the timezone sorted.
-                df = pd.DataFrame(data={'AVM volts': d.volts.squeeze()}, index=pd.DatetimeIndex(d.times))
-                # Upsample WHOI LIDAR z-wind:
-
-                lidarz = d.whoi.loc[:, self.slice_frame('Z-wind (m/s)', d.whoi)]
-
-                df2 = lidarz.max(axis='columns').rename('Z-wind')
-                df3 = pandas.merge_asof(df, df2, left_index = True, right_index = True, direction='nearest', tolerance=dt.timedelta(minutes=20))
-                # df3 = df3.interpolate(method='linear', limit_direction='both')
-
                 print(model.summary())
 
                 print('Generating timeseries...')
-                gen2 = TimeseriesGenerator(df3.loc[:,'AVM volts'], df3.loc[:,'Z-wind'], length = self.n_avm_samples, batch_size = len(d.volts), shuffle = False)
-                x, y = gen2[0]
+
+                gen2 = TimeseriesGenerator(d.all['AVM volts'], d.all['127m Z-wind (m/s)'], length = self.n_avm_samples, batch_size = d.all.shape[0], shuffle = False)
+                x = gen2[0]
+
                 self.z_predicted = np.full((self.n_avm_samples, 1), np.NaN)
                 print('Running the model...')
                 self.z_predicted = np.append(self.z_predicted, model.predict(x))
  
                 print('Plotting...')
-                fig = plt.figure(num = 'timeseries')
-                fig.axes[1].plot(d.times, self.z_predicted, color='red')
+                plt.figure(num = 'timeseries').axes[1].plot(d.all.index, self.z_predicted, color='red')
 
-                self.doStatistics(d)
+                self.doStatistics(self.d_test)
 
                 
         def find_events(self, d):
@@ -733,14 +714,15 @@ class CoronaBrowser(tk.Frame):
                                                 colour += 1
                                 #axes[n].legend()
                                 axes[n].set_xlim(d.times[0], d.times[-1])
+                                axes[n].grid(visible=True)
                                 n += 1
                         for toplot in self.plots_raw:
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
                                 #mean = d.whoi_raw[toplot].rolling(20, center=True).mean()
 
                                 # Control the plot of std dev and 95% confidence
-                                centre = False
-                                sz = 40
+                                centre = True
+                                sz = 10
 
                                 # Unbelievably, rolling() is
                                 # completely fucked: can't just handle
@@ -780,7 +762,7 @@ class CoronaBrowser(tk.Frame):
                 key = 'AVM volts'
                 key_z = 'Predicted Z-wind'
 
-                # Combine AVM data with prediction, if available
+                # Combine AVM data with Z-wind prediction, if available
                 df = d.avmpd
                 if hasattr(self, 'z_predicted'):
                         df[key_z] = self.z_predicted.squeeze()
@@ -792,7 +774,7 @@ class CoronaBrowser(tk.Frame):
                 # introduces a bit of weirdness if there's a gap in
                 # LIDAR timestamps (e.g. 3 days missing...) but
                 # *shrug*
-                # df
+
                 df = df.groupby(d.whoi.index[d.whoi.index.searchsorted(df.index)-1]).mean() # .std(), .max(), etc...
                 
                 #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
@@ -802,10 +784,19 @@ class CoronaBrowser(tk.Frame):
                 df = df.join(whoi_interp, how='left')
                 cor = df.corr()
 
-                corR = d.all.corr()
+                df_raw = d.all
+
+                pdb.set_trace()
+                
+                if hasattr(self, 'z_predicted'):
+                        df_raw[key_z] = self.z_predicted.squeeze()
+                        if corr_interesting_n == 1:
+                                # Only one? C'mon! Let's show both.
+                                corr_interesting_n = 2
+                cor_raw = df_raw.corr() # d.all.corr()
                 
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
-                corVR = corR.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
+                corV_raw = cor_raw.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
                 if False:
                         cor_errors = d.whoi.corr()
@@ -847,16 +838,18 @@ class CoronaBrowser(tk.Frame):
                 plt.figure('height')
                 plt.clf()
                 plt.plot(d.heights, corV)
-                plt.plot(d.heights, corVR)                
+                plt.plot(d.heights, corV_raw)                
                 plt.xlabel('height (m)')
                 plt.ylabel('correlation with voltage')
-                plt.legend({'Processed', 'Raw'})
+                plt.legend(['Processed', 'Raw'])
                 
                 plt.title(f'{d.datafile.stem}\nMax distance = {int(d.distance_max)} m')
 
                 # Do the scatters with the full set:
-                #corV = corVR
-                #df = b_interp
+                if True:
+                        cor = cor_raw
+                        corV = corV_raw
+                        df = df_raw
                 
                 # List interesting indices, in order of interestingness:
                 corVs = corV.sort_values(ascending = False, key = lambda x: abs(x))
@@ -887,7 +880,6 @@ class CoronaBrowser(tk.Frame):
                                 ax = plt.subplot(n, m, counter)
                                 df.plot.scatter(x = key_z, y = y, ax = ax, s=5, c='blue', label=f'corr={r_value:.2g}, λ={slope:.2g}, s={std_err:.2g}, p={p_value:.2g}')
                                 counter += 1
-                                
                         for y in interesting:
                                 mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
                                 slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(df.loc[mask,key], df.loc[mask,y])
