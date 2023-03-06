@@ -74,8 +74,9 @@ class CoronaBrowser(tk.Frame):
                 
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots_combine = {'Moisture': ('Proportion Of Packets With Rain (%)', 'Proportion Of Packets with Fog (%)')}
-                self.plots = ['Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Moisture', 'Packets in Average'] # BUG if there's only one, so need 2 until fixed.
+                self.plots = ['Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)'] # BUG if there's only one, so need 2 until fixed.
+                self.plots_combine = {'Proportion Of Packets With Rain (%)': ('Proportion Of Packets with Fog (%)'),
+                                      'Z-wind (m/s)': ('wind_speed_w_mean (m/s)') }
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
@@ -93,8 +94,8 @@ class CoronaBrowser(tk.Frame):
                 #self.loadFile(filename='data/2021-12 MVCO ASIT 20311010 (13d).csv')
                 #self.loadFile(filename='data/2022-02 MVCO ASIT 20311010 (27d).csv')
                 #self.loadFile(filename='data/2022-03 MVCO ASIT 20311010 (30d).csv')
-                self.loadFile(filename='data/2022-05-01 - 2022-06-01 MVCO ASIT 20311010.csv')
-                #self.loadFile(filename='data/latest')
+                #self.loadFile(filename='data/2022-05-01 - 2022-06-01 MVCO ASIT 20311010.csv')
+                self.loadFile(filename='data/latest.csv')
 
         def event_detection_enabled(self, state):
                 if state:
@@ -234,6 +235,7 @@ class CoronaBrowser(tk.Frame):
 
         # Ask for a filename, load it, plot it.
         def loadFile(self, filename=False):
+                print(f'Loading {filename}...')
                 if not filename:
                         filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
                 if filename:
@@ -290,7 +292,8 @@ class CoronaBrowser(tk.Frame):
                         if len(self.legends[toplot]):
                                 self.whoi_graphs += 1
 
-                self.whoi_graphs += len(self.plots_raw)
+                if d.whoi_raw_available:
+                        self.whoi_graphs += len(self.plots_raw)
 
                         
         def plotEvents(self, d=0):
@@ -695,10 +698,16 @@ class CoronaBrowser(tk.Frame):
                                 if len(self.legends[toplot]) == 0:
                                         continue
                                 axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
+
                                 axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
 
                                 if len(self.legends[toplot]) == 1:
                                         axes[n].plot(d.whoi.index, d.whoi[toplot], label=i)
+
+                                        if self.plots_combine[toplot]:
+                                                print('   *** I have not yet implemented single-line combined plots...')
+                                                pdb.set_trace()
+                                                
                                 else:
                                         order = np.argsort(self.z[toplot])
                                         z = ((l - self.z[toplot][order[0]]) / (self.z[toplot][order[-1]]-self.z[toplot][order[0]]) for l in self.z[toplot])
@@ -712,39 +721,46 @@ class CoronaBrowser(tk.Frame):
                                                 axes[n].plot(d.whoi.index, d.whoi[i],
                                                              label=i, color=colours[colour])
                                                 colour += 1
+                                        try:
+                                                if self.plots_combine[toplot]:
+                                                        print(f'   Adding to {toplot}: {self.plots_combine[toplot]}...')
+                                                        axes[n].plot(d.whoi.index, d.whoi[self.plots_combine[toplot]], color='black', label=self.plots_combine[toplot])
+                                        except:
+                                                print(f'   Trying to add to {toplot}: something did not work.')
                                 #axes[n].legend()
                                 axes[n].set_xlim(d.times[0], d.times[-1])
                                 axes[n].grid(visible=True)
                                 n += 1
-                        for toplot in self.plots_raw:
-                                axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
-                                #mean = d.whoi_raw[toplot].rolling(20, center=True).mean()
+                        if d.whoi_raw_available:
+                                for toplot in self.plots_raw:
+                                        axes.append(plt.subplot(nsubplots, 1, n+1, sharex = axes[0]))
+                                        #mean = d.whoi_raw[toplot].rolling(20, center=True).mean()
 
-                                # Control the plot of std dev and 95% confidence
-                                centre = True
-                                sz = 10
+                                        # Control the plot of std dev and 95% confidence
+                                        centre = True
+                                        sz = 10
 
-                                # Unbelievably, rolling() is
-                                # completely fucked: can't just handle
-                                # NaN like a civilised human being, so
-                                # no point in passing it a function
-                                # that handles NaN correctly. But
-                                # min_periods=1 just tosses NaN, and
-                                # count() can sort of clean up the
-                                # mess.
-                                dm = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).mean()
-                                ds = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).std()
-                                dn = np.sqrt(d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=0).count())
+                                        # Unbelievably, rolling() is
+                                        # completely fucked: can't just handle
+                                        # NaN like a civilised human being, so
+                                        # no point in passing it a function
+                                        # that handles NaN correctly. But
+                                        # min_periods=1 just tosses NaN, and
+                                        # count() can sort of clean up the
+                                        # mess.
+                                        dm = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).mean()
+                                        ds = d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=1).std()
+                                        dn = np.sqrt(d.whoi_raw[toplot].rolling(sz, center=centre, min_periods=0).count())
 
-                                axes[n].grid(visible=True)
-                                axes[n].plot(d.whoi_raw.index, ds, color = 'r')
-                                axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
-                                axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=5, color=colour_lookup[toplot])
-                                axes[n].fill_between(d.whoi_raw.index, (dm-ds)*1.96/dn, (dm+ds)*1.96/dn, alpha = 0.3, facecolor = 'k')
-                                axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
-                                axes[n].set_xlim(d.times[0], d.times[-1])
-                                axes[n].set_ylim(-2, 2)
-                                n += 1
+                                        axes[n].grid(visible=True)
+                                        axes[n].plot(d.whoi_raw.index, ds, color = 'r')
+                                        axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
+                                        axes[n].scatter(d.whoi_raw.index, d.whoi_raw[toplot], s=5, color=colour_lookup[toplot])
+                                        axes[n].fill_between(d.whoi_raw.index, (dm-ds)*1.96/dn, (dm+ds)*1.96/dn, alpha = 0.3, facecolor = 'k')
+                                        axes[n].plot(d.whoi.index, d.whoi[toplot], color='k')
+                                        axes[n].set_xlim(d.times[0], d.times[-1])
+                                        axes[n].set_ylim(-2, 2)
+                                        n += 1
                 
                 axes[0].set_title(d.datafile.stem)
                 plt.get_current_fig_manager().toolbar.zoom()
@@ -784,19 +800,44 @@ class CoronaBrowser(tk.Frame):
                 df = df.join(whoi_interp, how='left')
                 cor = df.corr()
 
-                df_raw = d.all
+                # What is this for?
+                #df_raw = d.all
+                        
+                if True:
+                        xcorx = df['AVM volts'].to_numpy()
+                        xcorx = (xcorx - np.nanmean(xcorx)) / np.nanstd(xcorx)
+                        xcorxN = np.nan_to_num(xcorx, copy=True)
+                        xcory = df['40m Z-wind (m/s)'].to_numpy()
+                        xcory = (xcory - np.nanmean(xcory)) / np.nanstd(xcory)
+                        xcoryN = np.nan_to_num(xcory, copy=True)
+                        t=np.empty(len(xcorx))
+                        xcor=np.empty(len(xcorx))
+                        xcor2=np.empty(len(xcorx))
+                        xcorself=np.empty(len(xcorx))
+                        for i in range(len(xcorx)):
+                                #xcor[i] = np.nansum(xcorx*np.roll(xcory, i))
+                                #xcorself[i] = np.nansum(xcorx*np.roll(xcorx, i))                        
+                                #xcor2[i] = np.dot(xcorx, np.roll(xcory, i))
+                                t[i] = i*10/3600/24
+                        xcorN = np.roll(scipy.signal.correlate(xcorxN, xcoryN, mode='same'), int(len(xcor)/2))
+                        #pdb.set_trace()
+                        plt.figure('corr')
+                        #plt.plot(t, xcor, c='blue')
+                        #plt.plot(t, xcor2, c='red')
+                        plt.plot(t, xcorN, c='green')
 
-                pdb.set_trace()
-                
-                if hasattr(self, 'z_predicted'):
+                if d.whoi_raw_available and hasattr(self, 'z_predicted'):
                         df_raw[key_z] = self.z_predicted.squeeze()
                         if corr_interesting_n == 1:
                                 # Only one? C'mon! Let's show both.
                                 corr_interesting_n = 2
-                cor_raw = df_raw.corr() # d.all.corr()
+                        cor_raw = df_raw.corr()
+                # Why this below?
+                # cor_raw = d.all.corr()
                 
                 corV = cor.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
-                corV_raw = cor_raw.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
+                if d.whoi_raw_available:
+                        corV_raw = cor_raw.loc[:,key].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
 
                 if False:
                         cor_errors = d.whoi.corr()
@@ -838,15 +879,17 @@ class CoronaBrowser(tk.Frame):
                 plt.figure('height')
                 plt.clf()
                 plt.plot(d.heights, corV)
-                plt.plot(d.heights, corV_raw)                
+                if d.whoi_raw_available:
+                        plt.plot(d.heights, corV_raw)
                 plt.xlabel('height (m)')
                 plt.ylabel('correlation with voltage')
-                plt.legend(['Processed', 'Raw'])
+                if d.whoi_raw_available:
+                        plt.legend(['Processed', 'Raw'])
                 
                 plt.title(f'{d.datafile.stem}\nMax distance = {int(d.distance_max)} m')
 
                 # Do the scatters with the full set:
-                if True:
+                if d.whoi_raw_available and hasattr(df, 'all'):
                         cor = cor_raw
                         corV = corV_raw
                         df = df_raw

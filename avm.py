@@ -280,11 +280,22 @@ class dataset:
                 all = pd.merge(self.avmpd, self.whoi_raw, left_index = True, right_index = True, how = 'outer')
                 all.interpolate(method='linear', limit_direction='both', limit = 2, inplace = True)
                 self.all = all.loc[self.avmpd.index]
+                self.all['41m Z-wind (m/s)'] = np.roll(self.all['40m Z-wind (m/s)'].to_numpy(), 261895)
+                self.all['42m Z-wind (m/s)'] = np.roll(self.all['40m Z-wind (m/s)'].to_numpy(), -3300)
+                #self.all['43m Z-wind (m/s)'] = np.roll(self.all['40m Z-wind (m/s)'].to_numpy(), 50871)
                 
+                #self.all['47m Z-wind (m/s)'] = np.roll(self.all['40m Z-wind (m/s)'].to_numpy(), -50871)
                         
         def loadWHOI(self, times):
 
-                self.loadWHOIRaw(times)
+                try:
+                        print('Trying to load whoiraw')
+                        self.loadWHOIRaw(times)
+                        self.whoi_raw_available = True
+                        print('   raw: yep')
+                except:
+                        self.whoi_raw_available = False
+                        print('   raw: nope')
 
                 firstfnum = times[0].strftime("%Y_%j")
                 lastfnum = times[-1].strftime("%Y_%j")
@@ -300,12 +311,22 @@ class dataset:
                 #filesets = {'lidar': [ 'asit.lidar.', '.sta', True ],
                 #             'met': ['met.Vaisala_', '.csv', False ],
                 #             'wind': ['met.Anemo_', '.csv', False ]}
+                #filesets = {'lidar': [ 'asit.ZXlidar.', '.sta', 2 ],
+                #             'met': ['met.Vaisala_', '.csv', False ],
+                #             'wind': ['met.Anemo_', '.csv', False ]}
 
                 # Here are the files. A hassle since a Dict isn't ordered.
                 #filesets = {'lidar': [[ 'asit.lidar.', '.sta', 1 ]],
-                #            'met': [['asit.mininode.CLRohn_', '.csv', 0 ]],
-                #            'wind': [['asit.mininode.Sonic1_', '.csv', 0 ]]}
-                filesets = { 'lidar': [[ 'asit.ZXlidar.', '.csv', 2], [ 'asit.lidar.', '.sta', 1 ]]}
+                #           'met': [['asit.mininode.CLRohn_', '.csv', 0 ]],
+                #           'wind': [['asit.mininode.Sonic1_', '.csv', 0 ]]}
+
+                # To compare new vs. old LIDAR:
+                #filesets = { 'lidar': [[ 'asit.ZXlidar.', '.csv', 2], [ 'asit.lidar.', '.sta', 1 ]],
+                #             'met': [['met.Vaisala_', '.csv', 0 ]],
+                #             'wind': [['met.Anemo_', '.csv', 0 ]]}
+                filesets = { 'lidar': [[ 'asit.ZXlidar.', '.csv', 2]],
+                             'met': [['asit.Vaisala_', '.csv', 0 ]],
+                             'wind': [['met.Anemo_', '.csv', 0 ]]}
                 
                 dataframes = []
 
@@ -481,7 +502,7 @@ class dataset:
 
                                                     if round == 0:
                                                             if len(daily_data): # Join lidar+met+wind
-                                                                    daily_data = daily_data.join(df, how='outer')
+                                                                    daily_data = daily_data.join(df, how='outer', rsuffix='r')
                                                             else:
                                                                     daily_data = df
                                                     else:
@@ -511,8 +532,14 @@ class dataset:
 
                 fig = plt.figure(num='map')
                 fig.clf()
+
+                # Map points of interest:
+                map_poi = {'Edgartown Airfield': (41.3893, -70.6122)}
+                # "locs" is used to compute the extent of the map points.
                 locs = np.array([[self.sensor["Latitude"], self.sensor["Longitude"]]], ndmin=2)
                 locs = np.append(locs, lidarloc, axis=0)
+                for i in map_poi:
+                        locs = np.append(locs, np.array([map_poi[i][0], map_poi[i][1]], ndmin=2), axis=0)
                 
                 terrain = cimgt.GoogleTiles(style='satellite')
                 self.map = fig.add_subplot(1, 1, 1, projection=terrain.crs)
@@ -524,9 +551,15 @@ class dataset:
                 
                 self.map.plot(self.sensor["Longitude"], self.sensor["Latitude"], marker='o', color='yellow', markersize=12,
                               alpha=1, transform=ccrs.Geodetic())
+                # Points Of Interest:
+                for i in map_poi:
+                        self.map.plot(map_poi[i][1], map_poi[i][0], marker='o', color='orange', markersize=15,
+                                      alpha=1, transform=ccrs.Geodetic())
                 for i in range(lidarloc.shape[0]):
                         self.map.plot(lidarloc[i,1], lidarloc[i,0], marker='o', color='red', markersize=4,
                                       alpha=1, transform=ccrs.Geodetic())
+                
+                # Manually add Edgartown Airfield
 
                             
             
@@ -536,11 +569,16 @@ class dataset:
                 self.heights = [int(i.split('m')[0]) for i in dfh]
                 print(f'Final LIDAR heights: {self.heights}')
 
-                print('*** NOT Interpolating 20-minute to 10-minute data...')
-                #self.whoi.interpolate(inplace=True, method='linear', limit=1, limit_area='inside')
+                #print('*** NOT Interpolating 20-minute to 10-minute data...')
+                self.whoi.interpolate(inplace=True, method='time', limit = 1, limit_area='inside')
+                #print('*** Interpolating wind_speed_w_mean (m/s)')
+                self.whoi['wind_speed_w_mean (m/s)'] = self.whoi['wind_speed_w_mean (m/s)'].interpolate(method='time', limit_direction='both')
+                
 
                 self.browser.waitbar_done()
                 self.browser.doTrainButton['state'] = 'normal'
+
+                print(self.whoi.dtypes)
 
                 
         def applyCorrections(self):
