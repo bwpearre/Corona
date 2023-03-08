@@ -74,9 +74,12 @@ class CoronaBrowser(tk.Frame):
                 
                 # Exponential temperature fit parameters computed from 20121725_1.csv
 
-                self.plots = ['Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)'] # BUG if there's only one, so need 2 until fixed.
+                self.plots = ['density', 'ddensitydt', 'Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)', 'Wind Direction (deg) at 38m'] # BUG if there's only one, so need 2 until fixed.
                 self.plots_combine = {'Proportion Of Packets With Rain (%)': ('Proportion Of Packets with Fog (%)'),
-                                      'Z-wind (m/s)': ('wind_speed_w_mean (m/s)') }
+                                      'Z-wind (m/s)': ('wind_speed_w_mean (m/s)'),
+                                      'Horizontal Wind Speed (m/s)': ('wind_speed_mean (m/s)'),
+                                      'Wind Direction (deg) at 38m': ('wind_direction_mean (degrees)')}
+        
 
                 #self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'wind_speed_mean (m/s)')
                 # self.plots = ('Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Wind Speed max (m/s)', 'Wind Direction', 'pressure_mean (hPa)', 'pressure_median (hPa)', 'pressure_std (hPa)', 'temperature_mean (degC)', 'temperature_median (degC)', 'temperature_std (degC)', 'humidity_mean (%RH)', 'humidity_median (%RH)', 'humidity_std (%RH)', 'wind_speed_mean (m/s)', 'wind_speed_std (m/s)', 'wind_direction_mean (degrees)', 'wind_direction_std (degrees)')
@@ -259,7 +262,6 @@ class CoronaBrowser(tk.Frame):
                         self.doStatisticsButton['state'] = 'normal'
 
                         self.event_detection_enabled(self.d_test.v_mode < 1)
-
                         self.plot_timeseries(self.d_test)
 
 
@@ -305,7 +307,7 @@ class CoronaBrowser(tk.Frame):
                 self.plot_timeseries(d, self.events)
                 if not hasattr(self, 'no_temperature_correction_check'):
                         self.plot_temperature_corrections()
-                        
+
 
         # Show default and new regressions from voltage-vs-temperature
         def plot_temperature_corrections(self, d):
@@ -702,11 +704,11 @@ class CoronaBrowser(tk.Frame):
                                 axes[n].set_ylabel(toplot, rotation=45, horizontalalignment='right')
 
                                 if len(self.legends[toplot]) == 1:
-                                        axes[n].plot(d.whoi.index, d.whoi[toplot], label=i)
+                                        axes[n].plot(d.whoi.index, d.whoi[toplot], label=toplot)
 
-                                        if self.plots_combine[toplot]:
-                                                print('   *** I have not yet implemented single-line combined plots...')
-                                                pdb.set_trace()
+                                        if toplot in self.plots_combine:
+                                                axes[n].plot(d.whoi.index, d.whoi[self.plots_combine[toplot]], color='black', label=self.plots_combine[toplot])
+                                                axes[n].legend()
                                                 
                                 else:
                                         order = np.argsort(self.z[toplot])
@@ -796,14 +798,40 @@ class CoronaBrowser(tk.Frame):
                 #whoi_interp = d.whoi.interpolate(method='linear', limit_direction='both')
                 whoi_interp = d.whoi.filter(like='Z-wind (m/s)')
 
+                
+                wind_speed_w_mean = True
+                heights = d.heights # We'll add sonic anemometer temporarily to the heights list, below:
+                if wind_speed_w_mean:
+                        whoi_interp.loc[:,'wind_speed_w_mean (m/s)'] = d.whoi.filter(like='wind_speed_w_mean')
+                        heights.append(0) # Treat the sonic anemometer as height 0
+
                 # Easiest most braindead way to line up all the data?
                 df = df.join(whoi_interp, how='left')
+
+                # Plot density
+                if True:
+                        df = df.merge(d.whoi.density, how = 'left', left_index = True, right_index = True)
+                        df['density'] = df['density'].interpolate(method='time', limit_direction='both')
+                        #df.loc[:, 'density'] = df.ewm(halflife='1 hour', times=df.index).mean() # Smooth... worse!
+                        t = df.index.astype('int64').values // (10**9)  # Convert index to seconds               
+                        df['ddensitydt']= np.gradient(df['density'].values, t)
+                        #cor = df.corr()
+                        #print(f'Correlations: {cor}')
+                        #mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
+                        plt.figure('AVM vs air density')
+                        ax = plt.subplot(1, 2, 1)
+                        df.plot.scatter(y = 'density', x = 'AVM volts', title = 'density vs AVM voltage', s=1, c='black', ax = ax)
+                        ax = plt.subplot(1, 2, 2)
+                        df.plot.scatter(y = 'ddensitydt', x = 'AVM volts', title = r'$∂_t$ density vs AVM voltage', s=1, c='black', ax = ax)
+
+
                 cor = df.corr()
 
                 # What is this for?
                 #df_raw = d.all
                         
-                if True:
+                if False:
+                        # Try to crosscorrelate AVM volts to z-wind through time. It'd be nice if they peaked together!
                         xcorx = df['AVM volts'].to_numpy()
                         xcorx = (xcorx - np.nanmean(xcorx)) / np.nanstd(xcorx)
                         xcorxN = np.nan_to_num(xcorx, copy=True)
@@ -878,9 +906,9 @@ class CoronaBrowser(tk.Frame):
 
                 plt.figure('height')
                 plt.clf()
-                plt.plot(d.heights, corV)
+                plt.plot(heights, corV[0:len(heights)])
                 if d.whoi_raw_available:
-                        plt.plot(d.heights, corV_raw)
+                        plt.plot(heights, corV_raw)
                 plt.xlabel('height (m)')
                 plt.ylabel('correlation with voltage')
                 if d.whoi_raw_available:
@@ -902,11 +930,18 @@ class CoronaBrowser(tk.Frame):
                 interesting = corVs.index[np.abs(corVs) > corr_interesting_threshold]
                 # ...or show top n? Comment out the line below to use above.
                 interesting = corVs.index[range(0, np.min((corr_interesting_n, len(corVs.index))))]
+
                 if hasattr(self, 'z_predicted'):
                         corVpred = cor.loc[:,key_z].drop({key, key_z}, errors='ignore') # correlation with key; drop self-corr
                         corVpreds = corVpred.sort_values(ascending = False, key = lambda x: abs(x))
                         print(f'Prediction correlations: {corVpreds}')
 
+                # Special case: plot the special correlation between AVM and wind_speed_w_mean:
+                if False:
+                        interesting_extra = interesting.to_list()
+                        interesting_extra[-1] = 'wind_speed_w_mean (m/s)'
+                        interesting = pd.Index(interesting_extra)
+                
                 if interesting.size or hasattr(self, 'z_predicted'):
                         # Figure out the layout
                         n = int(np.ceil(np.sqrt(interesting.size)))
@@ -937,6 +972,7 @@ class CoronaBrowser(tk.Frame):
                 else:
                         print(f'No correlations found > {corr_interesting_threshold}. Greatest was {corVs.iloc[1]}.')
 
+                
 
 # Set growth
 gpus = tf.config.experimental.list_physical_devices('GPU')

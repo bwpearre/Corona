@@ -573,10 +573,21 @@ class dataset:
                 self.whoi.interpolate(inplace=True, method='time', limit = 1, limit_area='inside')
                 #print('*** Interpolating wind_speed_w_mean (m/s)')
                 self.whoi['wind_speed_w_mean (m/s)'] = self.whoi['wind_speed_w_mean (m/s)'].interpolate(method='time', limit_direction='both')
+                self.whoi['wind_speed_mean (m/s)'] = self.whoi['wind_speed_mean (m/s)'].interpolate(method='time', limit_direction='both')
                 
 
                 self.browser.waitbar_done()
                 self.browser.doTrainButton['state'] = 'normal'
+
+                # Compute air density according to the formula Ted mailed:
+                try:
+                        print('ATTEMPTING DENSITY')
+                        p = 'pressure_mean (hPa)'
+                        RH = 'humidity_mean (%RH)'
+                        t = 'temperature_mean (met) (degC)'
+                        self.whoi.loc[:, 'density'] = (0.34848 * self.whoi[p] - 0.009 * self.whoi[RH] * np.exp(0.061 * self.whoi[t])) / (273.15 + self.whoi[t])
+                except:
+                        print('Could not compute air density.')
 
                 print(self.whoi.dtypes)
 
