@@ -600,6 +600,12 @@ class dataset:
             t = 'temperature_mean (met) (degC)'
             self.whoi.loc[:, 'density'] = (0.34848 * self.whoi[p] - 0.009 * self.whoi[RH] * np.exp(
                 0.061 * self.whoi[t])) / (273.15 + self.whoi[t])
+            # Compute derivative: interpolate, extract times in a way np.gradient() can use, compute it.
+            # self.whoi.loc[:,'density'] = self.whoi.loc[:,'density'].interpolate(method='time', limit_direction='both')
+            # df.loc[:, 'density'] = df.ewm(halflife='1 hour', times=df.index).mean() # Smooth... worse!
+            t = self.whoi.index.astype('int64').values // (10 ** 9)  # Convert index to seconds
+            self.whoi.loc[:,'ddensitydt'] = np.gradient(self.whoi['density'].values, t)
+
         except:
             print('Could not compute air density.')
 

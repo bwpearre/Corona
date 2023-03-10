@@ -792,10 +792,7 @@ class CoronaBrowser(tk.Frame):
         # Plot density
         if True:
             df = df.merge(d.whoi.density, how='left', left_index=True, right_index=True)
-            df['density'] = df['density'].interpolate(method='time', limit_direction='both')
-            # df.loc[:, 'density'] = df.ewm(halflife='1 hour', times=df.index).mean() # Smooth... worse!
-            t = df.index.astype('int64').values // (10 ** 9)  # Convert index to seconds
-            df['ddensitydt'] = np.gradient(df['density'].values, t)
+            df = df.merge(d.whoi.ddensitydt, how='left', left_index=True, right_index=True)
             # cor = df.corr()
             # print(f'Correlations: {cor}')
             # mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
