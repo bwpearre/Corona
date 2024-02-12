@@ -62,7 +62,7 @@ class CoronaBrowser(tk.Frame):
 
         # Exponential temperature fit parameters computed from 20121725_1.csv
 
-        self.plots = ['density', 'ddensitydt', 'Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)',
+        self.plots = ['density', 'dddt', 'Z-wind (m/s)', 'Z-wind Dispersion (m/s)', 'Horizontal Wind Speed (m/s)',
                       'Wind Direction (deg) at 38m']  # BUG if there's only one, so need 2 until fixed.
         self.plots_combine = {'Proportion Of Packets With Rain (%)': ('Proportion Of Packets with Fog (%)'),
                               'Z-wind (m/s)': ('wind_speed_w_mean (m/s)'),
@@ -789,10 +789,10 @@ class CoronaBrowser(tk.Frame):
         # Easiest most braindead way to line up all the data?
         df = df.join(whoi_interp, how='left')
 
-        # Plot density
-        if True:
+        # Plot density correlation scatter
+        if False:
             df = df.merge(d.whoi.density, how='left', left_index=True, right_index=True)
-            df = df.merge(d.whoi.ddensitydt, how='left', left_index=True, right_index=True)
+            #df = df.merge(d.whoi.ddensitydt, how='left', left_index=True, right_index=True)
             # cor = df.corr()
             # print(f'Correlations: {cor}')
             # mask = ~np.isnan(df.loc[:,key]) & ~np.isnan(df.loc[:,y])
@@ -800,7 +800,7 @@ class CoronaBrowser(tk.Frame):
             ax = plt.subplot(1, 2, 1)
             df.plot.scatter(y='density', x='AVM volts', title='density vs AVM voltage', s=1, c='black', ax=ax)
             ax = plt.subplot(1, 2, 2)
-            df.plot.scatter(y='ddensitydt', x='AVM volts', title=r'$∂_t$ density vs AVM voltage', s=1, c='black', ax=ax)
+            #df.plot.scatter(y='ddensitydt', x='AVM volts', title=r'$∂_t$ density vs AVM voltage', s=1, c='black', ax=ax)
 
         cor = df.corr()
 
@@ -825,7 +825,6 @@ class CoronaBrowser(tk.Frame):
                 # xcor2[i] = np.dot(xcorx, np.roll(xcory, i))
                 t[i] = i * 10 / 3600 / 24
             xcorN = np.roll(scipy.signal.correlate(xcorxN, xcoryN, mode='same'), int(len(xcor) / 2))
-            # pdb.set_trace()
             plt.figure('corr')
             # plt.plot(t, xcor, c='blue')
             # plt.plot(t, xcor2, c='red')
@@ -982,7 +981,7 @@ pd.set_option('display.width', None)
 pd.set_option('display.max_colwidth', None)
 
 root = tk.Tk()
-root.geometry('+0-0')
+root.geometry('-100-0')
 cor = CoronaBrowser(master=root)
 cor.master.title('Atmospheric Voltage Browser')
 
