@@ -26,43 +26,49 @@ voltage_extreme = 0.5
 
 class dataset:
 
-    def __init__(self, browser, filename):
+    def __init__(self, filename, browser=False):
+
+        # If browser is False, then load just the AVM data. No GUI, for rename_data_files.
         self.filename = filename
         self.browser = browser
         self.sensor_serial_number = np.NaN
-
         self.loadSensors()
-
-        # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
-        self.fit = mat([[-0.020992708021557917],
-                        [5.272377975649473]])
-
-        # Dictionary is exponential fit params indexed on sensor serial number:
-        self.fits = {-1: (1.713, -0.07977, 4.493),
-                     20121725: (1.3545883156167038, -0.0714642458651333, 4.482818353894192),
-                     20310992: (0.28929039047675625, -0.08857734679045634, 4.447723485085831)}
-
-        # Convert new to old column names:
-        self.column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)',
-                              'Vertical Wind Speed (m/s) at 68m': '77m Z-wind (m/s)'}
-
         self.loadFileBen(Path(filename))
-        self.loadWHOI(self.times)
+
+        # If we're running under CoronaBrowser, pass one in browser. Then we need the WHOI dataset too...
+        if browser:
+            self.browser = browser
+
+            # Temperature correction fit. This was computed from 20311010_450_expurgated.csv
+            self.fit = mat([[-0.020992708021557917],
+                            [5.272377975649473]])
+
+            # Dictionary is exponential fit params indexed on sensor serial number:
+            self.fits = {-1: (1.713, -0.07977, 4.493),
+                         20121725: (1.3545883156167038, -0.0714642458651333, 4.482818353894192),
+                         20310992: (0.28929039047675625, -0.08857734679045634, 4.447723485085831)}
+
+            # Convert new to old column names:
+            self.column_rename = {'Vertical Wind Speed (m/s) at 40m': '40m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 47m': '47m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 67m': '67m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 77m': '77m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 87m': '87m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 97m': '97m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 107m': '107m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 127m': '127m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 147m': '147m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 167m': '167m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 187m': '187m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 38m': '40m Z-wind (m/s)',
+                                  'Vertical Wind Speed (m/s) at 68m': '77m Z-wind (m/s)'}
+
+            self.loadWHOI(self.times)
 
     # Read the sensor list, which connects serial numbers with 4-D locations and gain settings etc. Unsorted, since faster to Stalinsort and then Quicksort.
     def loadSensors(self):
-        filename = 'data/sensors.csv'
+        pwd = Path(__file__)
+        filename = pwd.parents[0] / 'data' / 'sensors.csv'
         self.sensors = pd.read_csv(filename, skipinitialspace=True, parse_dates=['Date'], index_col='Date')
 
     # Pull the first number out of a string. If none found, return NaN
@@ -94,18 +100,22 @@ class dataset:
         self.datafile = filename
 
         # Define the legal date formats. Just error out if these fail.
-        date_format = ['%m/%d/%Y %H:%M:%S', '%m/%d/%y %I:%M:%S %p']  # , '%m/%d/%y %H:%M' ,'%m/%d/%Y %H:%M' ]
+        date_format = ['%m/%d/%Y %H:%M:%S', '%m/%d/%y %I:%M:%S %p', '%m/%d/%y %H:%M:%S', '%m/%d/%Y %I:%M:%S %p']
+        date_format_seconds_missing = ['%m/%d/%y %H:%M', '%m/%d/%Y %H:%M', '%m/%d/%y %I:%M %p', '%m/%d/%Y %H:%M']
 
         # Get the number of lines in the file so we can do a perfect progress bar...
         start = time.perf_counter()
         print(f'----- Loading {filename} -----')
         errors_incomplete = 0
         errors_missing = 0
-        self.browser.waitbar_indeterminate_start('Checking file size...')
+        if self.browser:
+            self.browser.waitbar_indeterminate_start('Checking file size...')
         num_lines = sum(1 for line in open(filename))
-        self.browser.waitbar_indeterminate_done()
+        if self.browser:
+            self.browser.waitbar_indeterminate_done()
         # print(f'{num_lines} lines. Time to determine file line count: {time.perf_counter()-start} seconds.')
-        self.browser.waitbar_start('Loading...', num_lines)
+        if self.browser:
+            self.browser.waitbar_start('Loading...', num_lines)
         self.temperature_present = 0
         timezone_utc = pytz.timezone("UTC")
         date_column = -1
@@ -122,7 +132,8 @@ class dataset:
                 if line_count % 100000 == 0 and False:
                     print(f'  Reading row {line_count}...')
                 if line_count % 1000 == 0:
-                    self.browser.waitbar_update(line_count)
+                    if self.browser:
+                        self.browser.waitbar_update(line_count)
                 line_count += 1
 
                 if still_in_header:
@@ -138,8 +149,7 @@ class dataset:
                                     self.sensor = self.sensors[self.sensors['LGR S/N'] == sn].sort_values(by='Date',
                                                                                                           ascending=False).iloc[
                                         0]
-                                    print(
-                                        f'      Location = {self.sensor["Station name"]} at {self.sensor["Latitude"]}, {self.sensor["Longitude"]}')
+                                    print(f'      Location = {self.sensor["Station name"]} at {self.sensor["Latitude"]}, {self.sensor["Longitude"]}')
                                 elif sn == self.sensor_serial_number:
                                     None
                                 else:
@@ -172,44 +182,55 @@ class dataset:
 
                         # If there's no "voltage" column but there is a "scaled" column, I guess we just use that instead... and guess that the voltage_scaling_factor should probably be 1
                         if scaled_column >= 0:
-                            if voltage_column == -1 or True:
+                            if voltage_column == -1:
                                 print(
-                                    '  Could not find "Volt" (ACTUALLY THIS MAY BE A LIE) but did find "Scaled Series". Interpreting it as scaled voltage, and setting my internal scaling factor to 1. Please verify.')
+                                    '  Found "Scaled Series". Interpreting it as scaled voltage, and setting my internal scaling factor to 1. Please verify.')
                                 voltage_column = scaled_column
                                 self.setVoltageScalingFactor(1)
                             else:
                                 print(
-                                    '  Found both "Volt" and "Scaled Series". Using "Volt", but setting my internal scaling factor to 2. Please verify.')
-                                self.setVoltageScalingFactor(2)
+                                    '  Found both "Volt" and "Scaled Series". Using "Scaled" and setting my internal scaling factor to 1. Please verify.')
+                                voltage_column = scaled_column
+                                self.setVoltageScalingFactor(1)
                         else:
                             print(
                                 '  Found Voltage, but not Scaled Series. Guessing that my internal scaling factor should be 1. Please verify.')
                             self.setVoltageScalingFactor(1)
-
                         still_in_header = False
 
 
                 # Here's the meat. Read each line, check for completeness, parse the dates, and add.
                 else:  # still_in_header = False
+                    #if errors_missing:
+                    #    pdb.set_trace()
                     if len(row) <= max([date_column, voltage_column, self.temperature_present]):
                         errors_incomplete += 1
                         errors_incomplete_line = line_count
                         errors_incomplete_example = row
                     elif row[date_column] and row[voltage_column] and (
                             (not self.temperature_present) or row[self.temperature_present]):
+
+                        t = False
                         for date_f in date_format:
-                            # print(f'Date format "{date_f}"')
-                            error_count = 0
                             try:
                                 t = dt.datetime.strptime(row[date_column], date_f) - timedelta_corona
-                                # print(f'success; date is {t}')
+                                # print(f'success; date is {t}, with format "{date_f}"')
                                 continue
                             except ValueError:
-                                error_count += 1
-                                if error_count == len(date_format):
-                                    print(
-                                        f'  * Line {line_count}: could not parse date string "{row[1]}" with expected format "{date_format}".')
+                                False
+                                # print(f"Can't parse date '{row[date_column]}' as '{date_f}'")
+                        if not t:
+                            for date_f in date_format_seconds_missing:
+                                # print(f'Date format "{date_f}"')
+                                try:
+                                    t = dt.datetime.strptime(row[date_column], date_f) - timedelta_corona
+                                    print(f''
+                                          f'Seconds missing from timestamps: date is {t}, with format "{date_f}"')
+                                    raise Exception(f'Timestamp does not include seconds. I demand seconds!')
+                                except ValueError:
+                                    print(f"Can't parse date '{row[date_column]}' as '{date_f}'")
                         times.append(timezone_utc.localize(t))
+
                         try:
                             volts.append(float(row[voltage_column]))
                         except:
@@ -228,7 +249,8 @@ class dataset:
                 print(
                     f'  ***** {errors_incomplete} errors like: Line {errors_incomplete_line}: "{errors_incomplete_example}" is incomplete. Corrupt/incomplete file? *****')
 
-        self.browser.waitbar_done()
+        if self.browser:
+            self.browser.waitbar_done()
 
         # register_matplotlib_converters()
         length = min(len(times), len(volts))
@@ -238,9 +260,10 @@ class dataset:
             if temperature_in_freedom_units:
                 temps = (temps - 32) * 5 / 9
                 temperature_in_freedom_units = False  # Unnecessary, but just in case...
-                self.browser.regressButton.grid(row=3, column=4)
-                self.browser.useNewRegressionButton.grid(row=3, column=5)
-                self.browser.useNewRegressionButton['state'] = 'disabled'
+                if self.browser:
+                    self.browser.regressButton.grid(row=3, column=4)
+                    self.browser.useNewRegressionButton.grid(row=3, column=5)
+                    self.browser.useNewRegressionButton['state'] = 'disabled'
                 times = times[0:length]
                 # volts = np.array(volts[0:length])
         volts = np.array(volts[0:length]).reshape((length, 1))
@@ -248,10 +271,14 @@ class dataset:
         self.times = times
         self.volts_raw = volts
         self.temps = temps
-        self.applyCorrections()
+        if self.browser:
+            self.applyCorrections()
+        else:
+            print(' **** NOT applying corrections ****')
+            self.volts = self.volts_raw
 
         if len(temps):
-            self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze(), 'temps': self.temps}, index=self.times)
+            self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze(), 'temps': self.temps.squeeze()}, index=self.times)
         else:
             self.avmpd = pd.DataFrame({'AVM volts': self.volts.squeeze()}, index=self.times)
 
@@ -333,8 +360,11 @@ class dataset:
         # filesets = { 'lidar': [[ 'asit.ZXlidar.', '.csv', 2], [ 'asit.lidar.', '.sta', 1 ]],
         #             'met': [['met.Vaisala_', '.csv', 0 ]],
         #             'wind': [['met.Anemo_', '.csv', 0 ]]}
-        filesets = {'lidar': [['asit.ZXlidar.', '.csv', 2]],
-                    'met': [['asit.Vaisala_', '.csv', 0]],
+        #filesets = {'lidar': [['asit.ZXlidar.', '.csv', 2]],
+        #            'met': [['asit.Vaisala_', '.csv', 0]],
+        #            'wind': [['met.Anemo_', '.csv', 0]]}
+        filesets = {'lidar': [['WLS7-436_', '.sta', 2]],
+                    'met': [['met.Vaisala_', '.csv', 0]],
                     'wind': [['met.Anemo_', '.csv', 0]]}
 
         dataframes = []
@@ -616,12 +646,14 @@ class dataset:
         self.getVoltageScalingFactor()
         self.volts_scaled = self.volts_raw * self.voltageScalingFactor
 
+
         # Correct for sensor temperature. Preserves mean value (i.e. not mean-0)
         # self.volts = self.applyTemperatureCorrection()
         self.volts = self.volts_scaled
 
         # Approximate mode of data: usually 0 unless we quantise it
-        self.v_mode = scipy.stats.mode((self.volts * 10).astype(int))[0][0][0] / 10
+        # WTF self.v_mode = scipy.stats.mode((self.volts * 10).astype(int))[0][0][0] / 10
+        self.v_mode = scipy.stats.mode((self.volts * 10).astype(int))[0][0] / 10
         self.volts = self.volts - self.v_mode
         if self.temperature_present:
             t = ' after temperature correction'
@@ -636,18 +668,22 @@ class dataset:
 
     def setVoltageScalingFactor(self, vsf):
         self.voltageScalingFactor = vsf
-        self.browser.voltageScalingFactorBox.delete(0, END)
-        self.browser.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+        if self.browser:
+            self.browser.voltageScalingFactorBox.delete(0, END)
+            self.browser.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
 
     def getVoltageScalingFactor(self):
-        try:
-            self.voltageScalingFactor = float(self.browser.voltageScalingFactorBox.get())
-        except:
-            print(
-                f'Could not convert voltage scaling factor "{self.browser.voltageScalingFactorBox.get()}" to number. Resetting to 1.')
-            self.voltageScalingFactor = 1.0
-        self.browser.voltageScalingFactorBox.delete(0, END)
-        self.browser.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+        if self.browser:
+            try:
+                self.voltageScalingFactor = float(self.browser.voltageScalingFactorBox.get())
+            except:
+                print(
+                    f'Could not convert voltage scaling factor "{self.browser.voltageScalingFactorBox.get()}" to number. Resetting to 1.')
+                self.voltageScalingFactor = 1.0
+            self.browser.voltageScalingFactorBox.delete(0, END)
+            self.browser.voltageScalingFactorBox.insert(0, self.voltageScalingFactor)
+        else:
+            print(f'No GUI available. Voltage scaling factor is {self.voltageScalingFactor}.')
 
     # Correct the voltage using self.fit for temperature
     def applyTemperatureCorrection(self):

@@ -231,7 +231,7 @@ class CoronaBrowser(tk.Frame):
             filename = filedialog.askopenfilename(filetypes=[('Comma-separated values', '*.csv')])
         if filename:
             self.reset_defaults()
-            self.d_test = avm.dataset(self, filename)
+            self.d_test = avm.dataset(filename, self)
             self.prePlotWHOI(d=self.d_test)
 
             self.rmplButton['state'] = 'normal'
@@ -405,7 +405,7 @@ class CoronaBrowser(tk.Frame):
 
         print(f'Training predictor on {d_train.filename} ...')
 
-        # d_validation = avm.dataset(self, 'data/203101010-something.csv')
+        # d_validation = avm.dataset('data/203101010-something.csv', self)
         self.n_avm_samples = 360
         batch_size = 128
 
@@ -462,7 +462,7 @@ class CoronaBrowser(tk.Frame):
 
         print(f'Training predictor on {d_train.filename} ...')
 
-        # d_validation = avm.dataset(self, 'data/203101010-something.csv')
+        # d_validation = avm.dataset('data/203101010-something.csv', self)
 
         self.n_avm_samples = 36
         batch_size = 128
